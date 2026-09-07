@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pandas
+python-multipart
+anyascii
+regex
+sqlalchemy
+pyodbc
