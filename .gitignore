@@ -1,0 +1,16 @@
+# Virtual Environment
+venv/
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# Database Lokal
+*.db
+entity_database.db
+
+# Environment Variables & Password
+.env
+
+# File Log
+*.log
