@@ -6,3 +6,4 @@ anyascii
 regex
 sqlalchemy
 pyodbc
+requests

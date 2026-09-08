@@ -110,6 +110,14 @@ def list_dynamic_validation():
     return JSONResponse(content=json.loads(df.to_json(orient="records")))
 
 @router.get(
+    "/locations",
+    summary="Display all location master data (entities_location)",
+)
+def list_locations():
+    df = crud.get_all_locations()
+    return JSONResponse(content=json.loads(df.to_json(orient="records")))
+
+@router.get(
     "/{business_entity_code}",
     summary="Find an entity by businessEntityCode",
 )

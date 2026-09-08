@@ -56,7 +56,7 @@ entity_api/
 | `database.py` | SQLite connection & schema only |
 | `hashing.py` | Pure function that generates a SHA256 hash for an entity |
 | `schemas.py` | Pydantic models to keep the Swagger docs clean |
-| `crud.py` | Business logic: insert entity, detect duplicates, process payload, query |
+| `crud.py` | Business logic: insert entity, detect duplicates, join location master data, process payload, query |
 | `validation.py` | Calls `rule_engine.run_all_rules()` for every newly inserted entity |
 | `routers/entities.py` | HTTP endpoint definitions (routing), delegates logic to `crud.py` |
 | `main.py` | Wires all modules together into a single FastAPI `app` |
@@ -179,13 +179,22 @@ curl -X POST http://localhost:8000/entities/upload-file \
 ```
 
 ### `POST /entities/inputlocation`
-Send a JSON array of location master data (`Country`, `City`, `Zip`, etc.) used by rules that need a country reference (e.g. an EU/UK check). Every item must include a `Country` field.
+Send a JSON array of location master data used by rules that need a country reference (e.g. an EU/UK check). Each item needs `systemCode`, `Code` (stored as `businessEntityCode`) and `Country`; `Name`, `Type`, `Alternate_code`, `City`, `Zip` are optional.
+
+At validation time each entity is **joined** with its `entities_location` row on the composite key `(systemCode, businessEntityCode)`, so rules can reference location fields (`Country`, `City`, …) as if they were part of the entity. Post locations **before** the matching entities — the join runs synchronously while each entity is inserted, and an entity is not re-validated once stored.
 
 ### `GET /entities`
 Lists all stored entities (summary columns).
 
 ```bash
 curl http://localhost:8000/entities
+```
+
+### `GET /entities/locations`
+Lists all rows in `entities_location` (the master data joined into each entity for validation).
+
+```bash
+curl http://localhost:8000/entities/locations
 ```
 
 ### `GET /entities/validation-results`
@@ -223,12 +232,16 @@ Previously, adding a validation rule meant writing a new Python function (`eu_de
 crud.process_payload()
    └─ for each entity in the batch:
         insert_hystoryentity(entity)               # store + compute hash
-        validation_rules_engine(entity, id, hash)   # -> rule_engine.run_all_rules()
+        get_location_for(systemCode, businessEntityCode)   # entities_location row (or {})
+        entity_joined = {**location, **entity}      # entity_json wins on name clash
+        validation_rules_engine(entity_joined, id, hash)   # -> rule_engine.run_all_rules()
              └─ for each ACTIVE rule in val_rules:
                   if the rule has a Check ID  -> resolvers.resolve(check_id)
                   otherwise                   -> conditions.evaluate_rule_conditions(rule_id)
                   the outcome (pass/fail) is written to the validation_results table
 ```
+
+Rules therefore see one flat dict combining the entity and its location master data. If no `entities_location` row matches, the location fields are simply absent (checks on them fail or fall through their `ELSE` branch, exactly as for any missing field).
 
 ### 1. `val_rules` table (Rules)
 

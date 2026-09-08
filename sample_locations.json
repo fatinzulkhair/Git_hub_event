@@ -1,0 +1,52 @@
+[
+  {
+    "systemCode": "ACasdasDC",
+    "Code": "SGLN_mapping",
+    "Name": "Ang Mo Kio Distribution Centre",
+    "Type": "Warehouse",
+    "Alternate_code": "SG-AMK-01",
+    "Country": "SG",
+    "City": "Singapore",
+    "Zip": "569880"
+  },
+  {
+    "systemCode": "ACDC",
+    "Code": "DOCS99",
+    "Name": "Shah Alam Plant",
+    "Type": "Manufacturing",
+    "Alternate_code": "MY-SA-99",
+    "Country": "MY",
+    "City": "Shah Alam",
+    "Zip": "40150"
+  },
+  {
+    "systemCode": "ACDC",
+    "Code": "BG01",
+    "Name": "Sofia Logistics Hub",
+    "Type": "Warehouse",
+    "Alternate_code": "BG-SOF-01",
+    "Country": "BG",
+    "City": "Sofia",
+    "Zip": "1000"
+  },
+  {
+    "systemCode": "ACDC",
+    "Code": "BG02",
+    "Name": "Hamburg Cross-Dock",
+    "Type": "Warehouse",
+    "Alternate_code": "DE-HAM-02",
+    "Country": "DE",
+    "City": "Hamburg",
+    "Zip": "20095"
+  },
+  {
+    "systemCode": "ACDC",
+    "Code": "BGN1",
+    "Name": "Tokyo Bay Depot",
+    "Type": "Distribution",
+    "Alternate_code": "JP-TYO-1",
+    "Country": "JP",
+    "City": "Tokyo",
+    "Zip": "135-0064"
+  }
+]

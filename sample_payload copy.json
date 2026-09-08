@@ -1,0 +1,50 @@
+{
+  "transmissionUid": "2ef3276e-af26-43ea-bede-c68beb35c8fd",
+  "mappingsInformation": [
+    {
+      "systemCode": "ACasdasDC",
+      "businessEntityCode": "SGLN_mapping",
+      "EOID": "LEWL1EQwJwW9",
+      "FID": "LEWL1Fjwo8Cb",
+      "UKEOID": "6025",
+      "UKFID": "Zsv77YiBg_oBtXQ",
+      "SGLN": "urn:epc:id:sgln:2143135.29114.0"
+    },
+    {
+      "systemCode": "ACDC",
+      "businessEntityCode": "DOCS99",
+      "EOID": "QCLUXXe00000023",
+      "FID": "QCLUXXf00000023000018",
+      "UKEOID": "",
+      "UKFID": "0ims9SUpP0txasdavB2",
+      "SGLN": "urn:epc:id:sgln:7173736.79084.0"
+    },
+    {
+      "systemCode": "ACDC",
+      "businessEntityCode": "BG01",
+      "EOID": "LEBGR1e003Tp4N3J",
+      "FID": "LEBGR1f005OF8asda4ya",
+      "UKEOID": "4276",
+      "UKFID": "hQsJAyxU94KFfK9",
+      "SGLN": "urn:epc:id:sgln:1233367.11754.0"
+    },
+    {
+      "systemCode": "ACDC",
+      "businessEntityCode": "BG02",
+      "EOID": "LEBGR1e003Tasdp4N3J",
+      "FID": "",
+      "UKEOID": "2745",
+      "UKFID": "8GrI42lHnslSc05",
+      "SGLN": "urn:epc:id:sgln:1233367.10054.0"
+    },
+    {
+      "systemCode": "ACDC",
+      "businessEntityCode": "BGN1",
+      "EOID": "LEBGR1e003Tp4N3J",
+      "FID": "LEBGR1f0asd05OF84yaBGN1",
+      "UKEOID": "4068",
+      "UKFID": "",
+      "SGLN": "urn:epc:id:sgln:1233367.11164.0"
+    }
+  ]
+}

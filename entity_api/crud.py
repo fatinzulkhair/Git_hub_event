@@ -83,6 +83,61 @@ def insert_hystoryentity(entity: dict) -> dict:
 
 
 # ---------------------------------------------------
+# LOCATION JOIN (entities_location) FOR VALIDATION
+# ---------------------------------------------------
+
+# entities_location column -> key name the validation rules expect
+_LOCATION_FIELD_MAP = {
+    "name": "Name",
+    "type": "Type",
+    "alternate_code": "Alternate_code",
+    "country": "Country",
+    "city": "City",
+    "zip": "Zip",
+}
+
+
+def get_location_for(system_code, business_entity_code) -> dict:
+    """Look up the entities_location row that matches an entity on the
+    composite key (systemCode, businessEntityCode).
+
+    Returns the location columns as a dict keyed the way the rule engine
+    expects them ("Country", "City", ...), or an empty dict when there is
+    no matching location row. If several rows match, the most recent one
+    (highest id) wins.
+    """
+    if system_code is None or business_entity_code is None:
+        return {}
+
+    conn = get_connection()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT name, type, alternate_code, country, city, zip
+            FROM entities_location
+            WHERE systemCode = ? AND businessEntityCode = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (system_code, business_entity_code),
+        )
+        row = cursor.fetchone()
+    finally:
+        conn.close()
+
+    if row is None:
+        return {}
+
+    columns = ["name", "type", "alternate_code", "country", "city", "zip"]
+    return {
+        _LOCATION_FIELD_MAP[col]: value
+        for col, value in zip(columns, row)
+        if value is not None
+    }
+
+
+# ---------------------------------------------------
 # PROCESS PAYLOAD (list of entities inside "mappingsInformation",
 # or a single entity sent directly)
 # ---------------------------------------------------
@@ -117,8 +172,20 @@ def process_payload(payload: dict) -> dict:
 
             # ---------------------------------------------------
             # Validation rules
+            #
+            # Some rules check location master-data fields (Country,
+            # City, ...), so validate against the JOIN of this entity
+            # and its entities_location row on the composite key
+            # (systemCode, businessEntityCode), not the bare entity.
+            # entity_json values win on any name clash; a missing
+            # location row just leaves those fields blank.
             # ---------------------------------------------------
-            validation_rules_engine(entity, id_entity, entity_hash, ctx=batch_ctx)
+            location = get_location_for(
+                entity.get("systemCode"), entity.get("businessEntityCode")
+            )
+            entity_joined = {**location, **entity}
+
+            validation_rules_engine(entity_joined, id_entity, entity_hash, ctx=batch_ctx)
             # ---------------------------------------------------
             # Validation rules end
             # ---------------------------------------------------
@@ -191,6 +258,25 @@ def get_all_entities() -> pd.DataFrame:
             """
             SELECT id, businessEntityCode, EOID, FID, UKEOID, UKFID, SGLN, created_at
             FROM entities
+            ORDER BY id
+            """,
+            conn,
+        )
+        return df
+    finally:
+        conn.close()
+
+
+def get_all_locations() -> pd.DataFrame:
+    """Location master data (entities_location) — the table joined into
+    each entity for validation via (systemCode, businessEntityCode)."""
+    conn = get_connection()
+    try:
+        df = pd.read_sql_query(
+            """
+            SELECT id, systemCode, businessEntityCode, name, type,
+                   alternate_code, country, city, zip
+            FROM entities_location
             ORDER BY id
             """,
             conn,
