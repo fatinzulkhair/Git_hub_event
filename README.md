@@ -243,6 +243,8 @@ crud.process_payload()
 
 Rules therefore see one flat dict combining the entity and its location master data. If no `entities_location` row matches, the location fields are simply absent (checks on them fail or fall through their `ELSE` branch, exactly as for any missing field).
 
+Field names in rules are matched **case-insensitively** (`country`, `Country` and `COUNTRY` all resolve to the same value), since the entity columns and the joined location columns don't share a casing convention. An exact-case match still wins when both spellings are present.
+
 ### 1. `val_rules` table (Rules)
 
 The main rule list. Key columns:

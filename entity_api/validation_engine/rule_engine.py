@@ -19,6 +19,46 @@ from .resolvers import resolve
 from .conditions import evaluate_rule_conditions
 
 
+class _CIEntity(dict):
+    """A dict whose ``get`` / ``in`` / ``[]`` also resolve case-insensitively.
+
+    Each entity is validated as its ``entity_json`` merged with the matching
+    ``entities_location`` row (see ``crud.process_payload``). Those two
+    sources use different column casing — ``EOID`` / ``SGLN`` from the entity,
+    ``country`` / ``city`` from the location table — so a rule must be able to
+    name a field however it reads naturally. Field lookups fold case, e.g.
+    ``country``, ``Country`` and ``COUNTRY`` all hit the same value. An
+    exact-case key always wins over a folded match.
+    """
+
+    def __init__(self, data):
+        super().__init__(data)
+        self._folded = {}
+        for key in self:
+            if isinstance(key, str):
+                self._folded.setdefault(key.casefold(), key)
+
+    def get(self, key, default=None):
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def __contains__(self, key):
+        if super().__contains__(key):
+            return True
+        return isinstance(key, str) and key.casefold() in self._folded
+
+    def __getitem__(self, key):
+        if super().__contains__(key):
+            return super().__getitem__(key)
+        if isinstance(key, str):
+            real = self._folded.get(key.casefold())
+            if real is not None:
+                return super().__getitem__(real)
+        raise KeyError(key)
+
+
 def run_all_rules(entity: dict, id_entity: int, entity_hash: str, ctx: dict = None) -> list:
     """Run every active rule against one entity.
 
@@ -29,6 +69,10 @@ def run_all_rules(entity: dict, id_entity: int, entity_hash: str, ctx: dict = No
     if ctx is None:
         ctx = {}
     ctx["current_entity_hash"] = entity_hash
+
+    # Rules address fields case-insensitively (entity + joined location
+    # columns use mixed casing) — see _CIEntity.
+    entity = _CIEntity(entity)
 
     rules = loader.get_active_rules()
     results = []
