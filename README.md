@@ -32,12 +32,14 @@ entity_api/
     ├── database.py                 # SQLite connection & creation of every table
     ├── hashing.py                  # generate_entity_hash()
     ├── schemas.py                  # Pydantic models for Swagger documentation
-    ├── crud.py                     # Insert, duplicate check, payload processing, queries
+    ├── crud.py                     # Insert, duplicate check, location join, payload processing, queries
     ├── validation.py               # Bridge into the dynamic rule engine
-    ├── main.py                     # App factory: builds FastAPI(), includes router, startup event
+    ├── rule_authoring.py           # Parses POST /validation-rules bodies -> the four val_* tables
+    ├── main.py                     # App factory: builds FastAPI(), includes routers, startup event
     ├── routers/
     │   ├── __init__.py
-    │   └── entities.py             # All /entities/... endpoints
+    │   ├── entities.py             # All /entities/... endpoints
+    │   └── validation_rules.py     # POST/GET /validation-rules
     └── validation_engine/
         ├── __init__.py
         ├── loader.py                # Reads val_rules / val_rule_conditions / val_checks / val_logic
@@ -214,6 +216,32 @@ Looks up an entity by `businessEntityCode`. Returns `404` if not found.
 curl http://localhost:8000/entities/BE001
 ```
 
+### `POST /validation-rules`
+Create (or overwrite) validation rules without editing `seed_validation_rules.py` or restarting. Rows are written straight into `val_rules` / `val_rule_conditions` / `val_checks` / `val_logic` and picked up on the next `/entities/process` call. Returns `201` with a summary (`rules_written`, `checks_written`, `generated_ids`, `warnings`, …).
+
+The body is intentionally permissive — see [Adding a New Rule](#adding-a-new-rule-no-coding-required). Simplest form:
+
+```bash
+curl -X POST http://localhost:8000/validation-rules \
+  -H "Content-Type: application/json" \
+  -d '{
+        "rule_id": "API-ROMANIZE-NAME",
+        "description": "Location name must be Latin/ASCII only",
+        "severity": "Warning",
+        "on_exception_description": "Location name is not romanized",
+        "conditions": [ { "role": "Target", "field": "Name", "data_type": "Romanize" } ]
+      }'
+```
+
+Behaviour: `INSERT OR REPLACE` per `rule_id` / `check_id` / `logic_id`; for any `rule_id` in the payload, **all** of its `val_rule_conditions` rows are replaced (they have no natural key). Missing `rule_id` / `check_id` / `logic_id` are auto-generated (`api-rule-…` / `api-check-…`) and echoed back in `generated_ids`.
+
+### `GET /validation-rules`
+Dumps every row currently in the four rule tables: `{ "rules": [...], "conditions": [...], "checks": [...], "logic": [...] }`.
+
+```bash
+curl http://localhost:8000/validation-rules
+```
+
 ---
 
 ## Duplicate Detection
@@ -356,7 +384,24 @@ Created automatically by `database.initialize_database()` on startup.
 2. **A rule with IF/THEN/ELSE logic, or one you want to reuse in other rules:** create a row in `val_checks` for each atomic check, combine them via `val_logic`, then set `val_rules.check_id` to that Logic ID or Check ID.
 3. Set `active = 'Y'`. The rule is active on the very next request — no server restart required.
 
-There are no CRUD endpoints for these four tables yet; edit them directly via SQLite or through a migration script like `seed_validation_rules.py`.
+You can do this three ways: edit `seed_validation_rules.py`, poke the tables directly via SQLite, or **`POST /validation-rules`** (see above).
+
+### Accepted request shapes for `POST /validation-rules`
+
+`entity_api/rule_authoring.py` normalises all of these into the same four-table layout:
+
+| Variation | Example |
+|---|---|
+| Single rule object | `{ "rule_id": "R1", "field": "Name", "data_type": "Romanize" }` |
+| Bare list of rules | `[ { ... }, { ... } ]` |
+| Seed layout | `{ "RULES": [...], "CONDITIONS": [...], "CHECKS": [...], "LOGIC": [...] }` |
+| Positional arrays | `{ "rules": [["R1", "type", null, "chk1", "desc", "Warning", "Y", -1, "msg"]] }` |
+| camelCase keys | `{ "ruleId": "R1", "checkId": "chk1", "onExceptionStatus": -1 }` |
+| Nested conditions | `{ "rule_id": "R1", "conditions": [{ "role": "Target", "field": "Name", "dataType": "Romanize" }] }` |
+| Flat single-condition shortcut | `{ "rule_id": "R1", "field": "Name", "data_type": "Romanize" }` (no `conditions` block) |
+| Inline `check` / `logic` object | `{ "rule_id": "R1", "check": { "type": "Data Type", "fields": ["Name"], "value": "Romanize" } }` |
+
+Field aliases are broad — e.g. `field` / `fieldName` / `field_names` → `field_name`; `value` / `expected` / `expectedValue` → `expected_value`; `type` / `dataType` → `data_type`; `active: true/false` → `'Y'/'N'`. Lists (`"expected_value": ["GB","UK"]`) are joined into the comma string the engine expects.
 
 ---
 

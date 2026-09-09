@@ -11,7 +11,7 @@ from fastapi import FastAPI
 
 from .config import APP_DESCRIPTION, APP_TITLE, APP_VERSION
 from .database import initialize_database
-from .routers import entities
+from .routers import entities, validation_rules
 
 app = FastAPI(
     title=APP_TITLE,
@@ -20,6 +20,7 @@ app = FastAPI(
 )
 
 app.include_router(entities.router)
+app.include_router(validation_rules.router)
 
 
 @app.on_event("startup")

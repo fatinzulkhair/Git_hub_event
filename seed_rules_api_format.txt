@@ -1,0 +1,254 @@
+# =============================================================================
+# seed_validation_rules.py  ->  POST /validation-rules  format
+# =============================================================================
+# Every rule defined in seed_validation_rules.py, rewritten as the JSON the
+# POST /validation-rules endpoint accepts (camelCase aliases: ruleId,
+# validationType, onExceptionStatus, field, dataType, ...).
+#
+# Usage:
+#   * POST a single rule_* object                -> creates that one rule
+#   * POST ACTIVE_RULES_PAYLOAD (bottom)         -> recreates the current seed
+#
+# Notes:
+#   - "conditions" form and "checkId"/"check" form are interchangeable for a
+#     single-field Data-Type / Operator test; IF/THEN/ELSE needs checks + logic.
+#   - Field names are matched case-insensitively by the engine.
+# =============================================================================
+
+
+# =============================================================================
+# ACTIVE rules  (what seed_validation_rules.py currently loads)
+# =============================================================================
+
+# --- VAL-UK-Field : IF country starts with an EU/UK code, THEN UKEOID+UKFID+EOID
+#     must all exist, ELSE pass. Needs the shared checks + logic block below. ---
+rule_val_uk_field = {
+    "ruleId": "VAL-UK-Field",
+    "validationType": "Location Master Data - UK Field Completeness",
+    "description": "If Country starts with a UK/GB code, then UK_TPD, UI_ID and UKSLL must all exist; otherwise the rule passes automatically",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "Missing UK_TPD/UI_ID/UKSLL for UK location",
+    "checkId": "val_logic_1_UK_field",
+}
+
+# --- FIELD-EXIST : UKEOID, UKFID and EOID must all be present.
+#     Uses the shared check val_operator_1 (also referenced by the logic).
+#     Standalone alternative: replace "checkId" with an inline
+#       "check": {"checkType": "Data Type", "fieldNames": "UKEOID,UKFID,EOID",
+#                 "checkValue": "Exist", "fieldCombine": "AND"}
+rule_field_exist = {
+    "ruleId": "FIELD-EXIST",
+    "validationType": "Location Master Data - UK Field Completeness",
+    "description": "If Country starts with a UK/GB code, then UK_TPD, UI_ID and UKSLL must all exist; otherwise the rule passes automatically",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "Missing UK_TPD/UI_ID/UKSLL for UK location",
+    "checkId": "val_operator_1",
+}
+
+# --- FIELD-EOID-Unique : EOID must be unique within the batch ---
+rule_field_eoid_unique = {
+    "ruleId": "FIELD-EOID-Unique",
+    "validationType": "Location Master Data - UK Field Completeness",
+    "description": "If Country starts with a UK/GB code, then UK_TPD, UI_ID and UKSLL must all exist; otherwise the rule passes automatically",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "Missing EOID is not unique for UK location",
+    "conditions": [
+        {"role": "Target", "field": "EOID", "dataType": "Unique"}
+    ],
+}
+
+# --- Country_exist : the joined location country must be present ---
+rule_country_exist = {
+    "ruleId": "Country_exist",
+    "validationType": "Location Master Data is exist for this code",
+    "description": "check are the country is exist otherwise the rule passes automatically",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "country is not exist",
+    "conditions": [
+        {"role": "Target", "field": "country", "dataType": "Exist"}
+    ],
+}
+
+# --- city_exist : the joined location city must be present ---
+rule_city_exist = {
+    "ruleId": "city_exist",
+    "validationType": "Location Master Data is exist for this code",
+    "description": "check are the city is exist otherwise the rule passes automatically",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "city is not exist",
+    "conditions": [
+        {"role": "Target", "field": "city", "dataType": "Exist"}
+    ],
+}
+
+# NOTE: seed_validation_rules.py lists "Country_exist" twice; the second copy is
+#       identical, so INSERT OR REPLACE makes it a no-op.
+
+
+# =============================================================================
+# COMMENTED-OUT example rules in seed_validation_rules.py  (VAL-001 .. VAL-007)
+# Not currently seeded — provided here in the same format.
+# =============================================================================
+
+rule_val_001 = {
+    "ruleId": "VAL-001",
+    "validationType": "Location Master Data - EoId, FID",
+    "functionName": "EoIDFiDValidation",
+    "description": "If the location address is in the EU/UK country, then this is a mandatory OR if the location would produce for EU/UK Market, then also it is mandatory for this fields to be present",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "Missing EoID/FiD",
+    "conditions": [
+        {"role": "Target", "field": "EOID", "dataType": "Exist"},
+        {"role": "Target", "field": "FID", "dataType": "Exist"},
+    ],
+}
+
+rule_val_002 = {
+    "ruleId": "VAL-002",
+    "validationType": "Conditional Field - ACDC UK mapping",
+    "description": "UKEOID/UKFID are mandatory when systemCode = ACDC",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "Missing UKEOID/UKFID for ACDC",
+    "conditions": [
+        {"role": "Trigger", "field": "systemCode", "operator": "equals", "expected": "ACDC", "group": "AND"},
+        {"role": "Target", "field": "UKEOID", "dataType": "Exist"},
+        {"role": "Target", "field": "UKFID", "dataType": "Exist"},
+    ],
+}
+
+rule_val_003 = {
+    "ruleId": "VAL-003",
+    "validationType": "SGLN Format Check",
+    "description": "SGLN must follow the format urn:epc:id:sgln:...",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "SGLN format invalid",
+    "conditions": [
+        {"role": "Target", "field": "SGLN", "dataType": "Regex", "constraint": "^urn:epc:id:sgln:.+$"}
+    ],
+}
+
+rule_val_004 = {
+    "ruleId": "VAL-004",
+    "validationType": "System Code Presence",
+    "description": "systemCode is mandatory for every record",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "Missing systemCode",
+    "conditions": [
+        {"role": "Target", "field": "systemCode", "dataType": "Exist"}
+    ],
+}
+
+rule_val_005 = {
+    "ruleId": "VAL-005",
+    "validationType": "EOID Uniqueness",
+    "description": "EOID must not duplicate another already-processed record",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "Duplicate EOID",
+    "conditions": [
+        {"role": "Target", "field": "EOID", "dataType": "Unique", "referenceSource": "batch"}
+    ],
+}
+
+rule_val_006 = {
+    "ruleId": "VAL-006",
+    "validationType": "Location Master Data - EoId, FID",
+    "description": "No two locations can have the same FiD",
+    "severity": "Critical",
+    "active": "Y",
+    "onExceptionStatus": -2,
+    "onExceptionDescription": "Duplicate FiD",
+    "conditions": [
+        {"role": "Target", "field": "FID", "dataType": "Unique", "referenceSource": "batch"}
+    ],
+}
+
+rule_val_007 = {
+    "ruleId": "VAL-007",
+    "validationType": "Location Master Data - Location Name",
+    "description": "Location name must be romanized (Latin/ASCII characters only). NOTE: 'LocationName' is a placeholder field -- adjust to match the actual field name in your data.",
+    "severity": "Warning",
+    "active": "Y",
+    "onExceptionStatus": -1,
+    "onExceptionDescription": "Location name contains non-Latin characters",
+    "conditions": [
+        {"role": "Target", "field": "LocationName", "dataType": "Romanize"}
+    ],
+}
+
+
+# =============================================================================
+# Shared building blocks for the IF/THEN/ELSE rule (VAL-UK-Field)
+# =============================================================================
+SHARED_CHECKS = [
+    {
+        "checkId": "val_operator_1",
+        "checkType": "Data Type",
+        "fieldNames": "UKEOID,UKFID,EOID",
+        "checkValue": "Exist",
+        "fieldCombine": "AND",
+    },
+    {
+        "checkId": "val_operator_2",
+        "checkType": "Operator",
+        "fieldNames": "country",
+        "checkValue": "starts_with",
+        "expectedValue": "AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE,GB,UK",
+        "fieldCombine": "AND",
+    },
+]
+SHARED_LOGIC = [
+    {"logicId": "val_logic_1_UK_field", "if": "val_operator_2", "then": "val_operator_1", "else": "True"},
+]
+
+
+# =============================================================================
+# ONE payload that recreates the current (active) seed in a single POST
+#   POST http://localhost:8000/validation-rules
+# =============================================================================
+ACTIVE_RULES_PAYLOAD = {
+    "rules": [
+        rule_val_uk_field,
+        rule_field_exist,
+        rule_field_eoid_unique,
+        rule_country_exist,
+        rule_city_exist,
+    ],
+    "checks": SHARED_CHECKS,
+    "logic": SHARED_LOGIC,
+}
+
+
+# =============================================================================
+# ONE payload with the commented-out example set (VAL-001 .. VAL-007)
+# =============================================================================
+EXAMPLE_RULES_PAYLOAD = {
+    "rules": [
+        rule_val_001,
+        rule_val_002,
+        rule_val_003,
+        rule_val_004,
+        rule_val_005,
+        rule_val_006,
+        rule_val_007,
+    ]
+}
