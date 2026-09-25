@@ -1,6 +1,6 @@
 # Entity Comparison API
 
-A **FastAPI**-based API for storing JSON entities into SQLite, automatically detecting duplicates using a **SHA256 hash**, and validating every entity through a **dynamic rule engine** whose rules live in the database instead of being hardcoded in Python.
+A **FastAPI**-based API for storing JSON entities into SQLite, identifying each entity by a **SHA256 hash of `systemCode` + `businessEntityCode`**, and validating every entity through a **dynamic rule engine** whose rules live in the database instead of being hardcoded in Python.
 
 ---
 
@@ -10,11 +10,11 @@ A **FastAPI**-based API for storing JSON entities into SQLite, automatically det
 2. [Installation](#installation)
 3. [Running the Server](#running-the-server)
 4. [API Endpoints](#api-endpoints)
-5. [Duplicate Detection](#duplicate-detection)
+5. [Entity Identity (hash)](#entity-identity-hash)
 6. [Dynamic Rule Engine](#dynamic-rule-engine)
 7. [Database Schema](#database-schema)
 8. [Adding a New Rule (no coding required)](#adding-a-new-rule-no-coding-required)
-9. [Notes & Legacy Modules](#notes--legacy-modules)
+9. [Notes](#notes)
 
 ---
 
@@ -32,14 +32,14 @@ entity_api/
     ├── database.py                 # SQLite connection & creation of every table
     ├── hashing.py                  # generate_entity_hash()
     ├── schemas.py                  # Pydantic models for Swagger documentation
-    ├── crud.py                     # Insert, duplicate check, location join, payload processing, queries
-    ├── validation.py               # Bridge into the dynamic rule engine
+    ├── crud.py                     # Insert, location join, payload processing, queries
     ├── rule_authoring.py           # Parses POST /validation-rules bodies -> the four val_* tables
     ├── main.py                     # App factory: builds FastAPI(), includes routers, startup event
     ├── routers/
     │   ├── __init__.py
     │   ├── entities.py             # All /entities/... endpoints
-    │   └── validation_rules.py     # POST/GET /validation-rules
+    │   ├── validation_rules.py     # POST/GET /validation-rules
+    │   └── responsible_contacts.py # POST/GET /responsible-contacts
     └── validation_engine/
         ├── __init__.py
         ├── loader.py                # Reads val_rules / val_rule_conditions / val_checks / val_logic
@@ -48,26 +48,25 @@ entity_api/
         ├── resolvers.py             # Resolves a Check ID / Logic ID recursively (IF/THEN/ELSE)
         ├── conditions.py            # Evaluates rules that use Rule Conditions directly (no Check/Logic ID)
         ├── rule_engine.py           # Orchestrator: runs every active rule against one entity
-        ├── Location.py              # (legacy, no longer called — see the note below)
-        └── romanize.py              # (legacy, no longer called — see the note below)
+        └── values.py                # Shared value helpers (is_empty, split_csv)
 ```
 
 | File / Module | Responsibility |
 |---|---|
 | `config.py` | All global constants in one place |
-| `database.py` | SQLite connection & schema only |
+| `database.py` | SQLite connection, schema, migrations, and the shared query helpers |
 | `hashing.py` | Pure function that generates a SHA256 hash for an entity |
 | `schemas.py` | Pydantic models to keep the Swagger docs clean |
-| `crud.py` | Business logic: insert entity, detect duplicates, join location master data, process payload, query |
-| `validation.py` | Calls `rule_engine.run_all_rules()` for every newly inserted entity |
+| `crud.py` | Business logic: insert entity, join location master data, process payload, query |
 | `routers/entities.py` | HTTP endpoint definitions (routing), delegates logic to `crud.py` |
 | `main.py` | Wires all modules together into a single FastAPI `app` |
-| `validation_engine/loader.py` | Reads the four rule tables from the database |
+| `validation_engine/loader.py` | Reads the four rule tables into one `RuleSet` per payload, and writes results back |
 | `validation_engine/operators.py` | Evaluates Operators (Trigger rows, or a Check of type "Operator") |
 | `validation_engine/datatypes.py` | Evaluates Data Types (Target rows, or a Check of type "Data Type") |
 | `validation_engine/resolvers.py` | Resolves a Check ID / Logic ID, including Logic → Logic chaining |
 | `validation_engine/conditions.py` | Evaluates rules defined directly through Rule Conditions |
-| `validation_engine/rule_engine.py` | Loops every active rule, writes results to `validation_results` |
+| `validation_engine/rule_engine.py` | Loops every active rule for one entity and returns its outcomes |
+| `validation_engine/values.py` | `is_empty` / `split_csv`, shared by operators and data types |
 
 ---
 
@@ -158,19 +157,20 @@ The payload can also be a single entity sent directly (without the `mappingsInfo
 **Response:**
 ```json
 {
-  "total_entities": 1,
+  "total": 1,
   "inserted": 1,
-  "skipped": 0,
+  "new_records": 1,
+  "updated_records": 0,
+  "joined": 0,
+  "awaiting_counterpart": 1,
   "details": [
-    { "status": "inserted", "id": 1, "businessEntityCode": "BE001" }
+    { "status": "inserted", "id": 1, "new_record": true, "entity_hash": "…",
+      "systemCode": "SYS1", "businessEntityCode": "BE001", "joined": false }
   ]
 }
 ```
 
-If the same entity is sent again:
-```json
-{ "status": "skipped", "reason": "already_exists", "businessEntityCode": "BE001", "existing_id": 1 }
-```
+Every posted entity is appended to `historical_entities` (`inserted`, and `id` = its row there) and creates or replaces its row in `entities` (`new_records` / `updated_records`). It is then validated against the join with `location`: `joined` counts the entities whose location already exists, `awaiting_counterpart` those still without one. See [Records and the Join](#records-and-the-join).
 
 ### `POST /entities/upload-file`
 Upload a `.json` file (multipart/form-data) with the same structure as above.
@@ -183,31 +183,65 @@ curl -X POST http://localhost:8000/entities/upload-file \
 ### `POST /entities/inputlocation`
 Send a JSON array of location master data used by rules that need a country reference (e.g. an EU/UK check). Each item needs `systemCode`, `Code` (stored as `businessEntityCode`) and `Country`; `Name`, `Type`, `Alternate_code`, `City`, `Zip` are optional.
 
-At validation time each entity is **joined** with its `entities_location` row on the composite key `(systemCode, businessEntityCode)`, so rules can reference location fields (`Country`, `City`, …) as if they were part of the entity. Post locations **before** the matching entities — the join runs synchronously while each entity is inserted, and an entity is not re-validated once stored.
+Locations are stored exactly like entities — every posting in `historical_location`, the newest in `location` — and posting one **also runs the validation rules**, against the join with `entities`. Order therefore no longer matters: whichever side arrives second re-validates the pair. A location whose entity does not exist yet is reported by the `JOIN-COMPLETENESS` rule, and the response's `awaiting_counterpart` counts them.
 
 ### `GET /entities`
-Lists all stored entities (summary columns).
+Lists the `entities` table — the newest version of each `systemCode` + `businessEntityCode` (summary columns).
 
 ```bash
 curl http://localhost:8000/entities
 ```
 
+### `GET /entities/historical`
+Lists every posting (`historical_entities`). A row's `id` is the `entity_id` used in `validation_results`.
+
+```bash
+curl http://localhost:8000/entities/historical
+```
+
 ### `GET /entities/locations`
-Lists all rows in `entities_location` (the master data joined into each entity for validation).
+Lists the `location` table — the newest location per `systemCode` + `businessEntityCode`.
 
 ```bash
 curl http://localhost:8000/entities/locations
 ```
 
+### `GET /entities/locations/historical`
+Lists every location posting (`historical_location`). A row's `id` is the `location_id` used in `validation_results`.
+
+### `GET /entities/joined`
+The FULL OUTER JOIN the rules are evaluated against: one row per `systemCode` + `businessEntityCode`, both sides' columns, and a `join_status` of `complete` / `missing_entity` / `missing_location`.
+
+```bash
+curl http://localhost:8000/entities/joined
+```
+
 ### `GET /entities/validation-results`
-Shows the dynamic rule engine's results — one row per (entity, rule) pair, with pass/fail status, severity, and message.
+The full history: every outcome ever written, one row per (record, rule, run), with pass/fail status, severity, and message. A record posted five times appears five times.
 
 ```bash
 curl http://localhost:8000/entities/validation-results
 ```
 
-### `GET /entities/validation`
-The old (legacy) endpoint that joins the `romanize` and `Location_validation` tables. Kept for backward compatibility, but no longer populated by the current validation flow — see [Notes & Legacy Modules](#notes--legacy-modules).
+### `GET /entities/validation-results/latest`
+The most recent run only — one row per record and rule, from `latest_validation_rules`. `source` says whether that run came from posting the entity or the location; `validated_at` is when it ran.
+
+```bash
+curl http://localhost:8000/entities/validation-results/latest
+```
+
+### `GET /entities/validation-results/summary`
+One row per record, failures first: `rules_run`, `rules_failed`, and `failed_rules` (the failing rule ids, `', '`-separated, `null` when nothing failed).
+
+```bash
+curl http://localhost:8000/entities/validation-results/summary
+```
+
+```json
+[ { "systemCode": "SYS-A", "businessEntityCode": "BE-004", "rules_run": 3,
+    "rules_failed": 2, "failed_rules": "JOIN-COMPLETENESS, NB2-LOCATION-COUNTRY",
+    "validated_at": "2026-09-25 04:33:02" } ]
+```
 
 ### `GET /entities/{business_entity_code}`
 Looks up an entity by `businessEntityCode`. Returns `404` if not found.
@@ -242,11 +276,64 @@ Dumps every row currently in the four rule tables: `{ "rules": [...], "condition
 curl http://localhost:8000/validation-rules
 ```
 
+### `POST /responsible-contacts`
+Register who is responsible for a system or a country, and how to reach them. Accepts one object or a list; returns `201` with `total` / `inserted` / `skipped` and a per-row `details` list.
+
+| Field | Meaning |
+|---|---|
+| `related_field` | `system` or `country` (case-insensitive; anything else → `422`) |
+| `related_field_name` | the system name or country name |
+| `person_name` | responsible person |
+| `contact` | email or Teams account (free text) |
+
+camelCase keys (`relatedField`, `relatedFieldName`, `personName`) are accepted too.
+
+```bash
+curl -X POST http://localhost:8000/responsible-contacts \
+  -H "Content-Type: application/json" \
+  -d '[
+        { "related_field": "country", "related_field_name": "Malaysia",
+          "person_name": "Aisyah Rahman", "contact": "aisyah.rahman@example.com" },
+        { "related_field": "system", "related_field_name": "ACDC",
+          "person_name": "Budi Santoso", "contact": "teams:budi.santoso" }
+      ]'
+```
+
+A row identical to an existing one (all four values) is reported as `skipped` instead of being inserted twice. A system or country can still have several different contacts.
+
+### `GET /responsible-contacts`
+Lists every row of the `responsible_contact` table.
+
 ---
 
-## Duplicate Detection
+## Records and the Join
 
-Each entity is serialized to JSON with `sort_keys=True`, then hashed with SHA256. That hash is stored as a `UNIQUE` column in the `entities` table. If a new entity produces the exact same hash, it's automatically skipped — not treated as an error, just marked `status: skipped`.
+An **entity** and a **location** are both records identified by **`systemCode` + `businessEntityCode`**: those two values are serialized to JSON (`sort_keys=True`) and hashed with SHA256 into `entity_hash`. No other field affects the hash, and because both sides hash the same pair, `entity_hash` is also what joins them.
+
+Each kind is kept in two tables with identical columns:
+
+| Kind | Every posting | Newest posting | `entity_hash` |
+|---|---|---|---|
+| Entity | `historical_entities` | `entities` | not unique in history, `UNIQUE` in the latest table |
+| Location | `historical_location` | `location` | same |
+
+A posting is always appended to the history table. In the latest table a new pair is inserted, and a pair already present has its row **replaced** (same `id`, all data columns overwritten, `created_at` refreshed). Older versions stay in the history table.
+
+### Validation runs on both sides
+
+`POST /entities/process` and `POST /entities/inputlocation` both store their postings and then run the rule engine. Rules are evaluated against the **FULL OUTER JOIN** of the two latest rows, as one flat record — entity fields win over location fields on a name clash, and field lookup is case-insensitive, so a rule may say `country`, `Country` or `COUNTRY`.
+
+Either side may be missing, and the engine always emits a built-in result for that:
+
+| `rule_id` | When | `status` | `passed` |
+|---|---|---|---|
+| `JOIN-COMPLETENESS` | both sides exist | — | 1 |
+| `JOIN-COMPLETENESS` | location posted, no entity yet | `-11` | 0 |
+| `JOIN-COMPLETENESS` | entity posted, no location yet | `-12` | 0 |
+
+`JOIN-COMPLETENESS` is reserved: a `val_rules` row with that id is ignored. Each `validation_results` row also carries `entity_id`, `location_id` (the two history rows that were joined; `NULL` for a missing side) and `source` (`entity` or `location` — which POST produced the row).
+
+**Migration.** `initialize_database()` upgrades older databases on startup, once and automatically. The old single `entities` table becomes `historical_entities` with `entities` filled from the newest posting per record; `entities_location` becomes `historical_location` with `location` filled the same way, each row's `entity_hash` derived from its own `systemCode` / `businessEntityCode`; and `validation_results` gains `location_id` and `source`. Location postings never stored an insert time, so migrated history rows carry the migration timestamp — their original order is preserved by `id`.
 
 ---
 
@@ -257,19 +344,21 @@ Previously, adding a validation rule meant writing a new Python function (`eu_de
 ### High-level flow
 
 ```
-crud.process_payload()
-   └─ for each entity in the batch:
-        insert_hystoryentity(entity)               # store + compute hash
-        get_location_for(systemCode, businessEntityCode)   # entities_location row (or {})
-        entity_joined = {**location, **entity}      # entity_json wins on name clash
-        validation_rules_engine(entity_joined, id, hash)   # -> rule_engine.run_all_rules()
+crud._process_postings(spec, payloads, ...)      # spec = ENTITIES or LOCATIONS
+   ├─ load_ruleset()                             # one snapshot of the four rule tables
+   └─ for each posting in the payload:
+        store_posting(spec, record)                # -> history always; -> latest: insert or replace
+        latest_posting(other_spec, entity_hash)    # the other side of the join (or None)
+        run_all_rules({**location, **entity}, ...) # entity fields win on a name clash
+             ├─ JOIN-COMPLETENESS                  # built-in: is the other side there?
              └─ for each ACTIVE rule in val_rules:
                   if the rule has a Check ID  -> resolvers.resolve(check_id)
                   otherwise                   -> conditions.evaluate_rule_conditions(rule_id)
-                  the outcome (pass/fail) is written to the validation_results table
+        insert_validation_results(rows)            # one batch write per payload
+             └─ refresh_validation_tables()        # latest_validation_rules + validation_summary
 ```
 
-Rules therefore see one flat dict combining the entity and its location master data. If no `entities_location` row matches, the location fields are simply absent (checks on them fail or fall through their `ELSE` branch, exactly as for any missing field).
+Rules therefore see one flat dict combining the entity and its location. If the other side has never been posted, its fields are simply absent — checks on them fail or fall through their `ELSE` branch, exactly as for any missing field, and `JOIN-COMPLETENESS` says which side is missing.
 
 Field names in rules are matched **case-insensitively** (`country`, `Country` and `COUNTRY` all resolve to the same value), since the entity columns and the joined location columns don't share a casing convention. An exact-case match still wins when both spellings are present.
 
@@ -366,15 +455,24 @@ A `Unique` check with `Reference Source = batch` compares values across entities
 Created automatically by `database.initialize_database()` on startup.
 
 **Data tables:**
-- `entities` — successfully inserted entities (plus a unique `entity_hash`)
-- `entities_location` — location master data (used by rules that need a country reference)
+- `entities` — the newest version of each entity, unique on `entity_hash` (hash of `systemCode` + `businessEntityCode`)
+- `historical_entities` — every posted entity (same columns, `entity_hash` not unique); its `id` is `validation_results.entity_id`
+- `location` — the newest location per record, unique on `entity_hash`
+- `historical_location` — every location posting; its `id` is `validation_results.location_id`
+- `responsible_contact` — who to contact per system or country: `related_field` (`system`/`country`), `related_field_name`, `person_name`, `contact` (+ `id`, `created_at`); unique on the four values
 
 **Rule engine tables (dynamic):**
 - `val_rules`, `val_rule_conditions`, `val_checks`, `val_logic` — rule definitions
-- `validation_results` — the outcome of each (entity, rule) pair: `passed`, `severity`, `status`, `description`
+- `validation_results` — the history: one row per (record, rule, run): `entity_hash`, `entity_id`, `location_id`, `source`, `passed`, `severity`, `status`, `description`
 
-**Legacy tables (see note below):**
-- `romanize`, `Location_validation` — no longer written to by the current validation flow
+**Derived from `validation_results`** (rebuilt in the same transaction as each write, so they never lag):
+- `latest_validation_rules` — the latest run only, keyed on (`entity_hash`, `rule_id`), plus `systemCode`, `businessEntityCode`, `source`, `passed`, `severity`, `status`, `description`, `validated_at`
+- `validation_summary` — that table aggregated per record, keyed on `entity_hash`: `rules_run`, `rules_failed`, `failed_rules`, `validated_at`
+
+Both are keyed by the record (`entity_hash` = `systemCode` + `businessEntityCode` hashed), never by a posting id, so one record holds one row per rule however often it is posted — and the entity side and the location side of a join share those rows.
+
+A record is rewritten wholesale each time it is validated: its old rows are cleared first, so a rule that has since been deactivated leaves the table on that record's next posting. Records not re-posted keep their last known run. `initialize_database()` backfills both tables once, from the newest result per (record, rule), for databases whose results predate them.
+
 
 ---
 
@@ -405,9 +503,6 @@ Field aliases are broad — e.g. `field` / `fieldName` / `field_names` → `fiel
 
 ---
 
-## Notes & Legacy Modules
-
-- `validation_engine/Location.py` (the `eu_detect` function) and `validation_engine/romanize.py` (the `romanizecheck` function) are the **old** implementation, from before the dynamic rule engine existed. Neither is called anymore by `validation.py` — everything they used to do is now expressed as rules in `val_rules`/`val_checks`/`val_logic` (see VAL-007 for romanize, and `val_logic_1_UK_field` / `logic_final_eu_check` as the equivalent of `eu_detect`).
-- Both files, along with the `romanize` and `Location_validation` tables, are still in the codebase as a safety net in case some other part of the system still reads them. If nothing else depends on them, they're safe to delete along with their tables.
+## Notes
 - Default database: SQLite (`entity_database.db`), configurable via the `ENTITY_DB_NAME` environment variable.
 - The full entity payload (`entity_json`) is still stored intact in the database, even though a few fields (`EOID`, `FID`, etc.) are also extracted into their own columns for fast querying.

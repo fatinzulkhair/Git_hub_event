@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
-from .database import get_connection
+from .database import connect, query_rows
 
 # ---------------------------------------------------------------------------
 # Column order for each table — used to expand positional arrays like
@@ -509,8 +509,7 @@ def save_validation_rules(payload: ValidationRulesPayload) -> dict:
 
 
 def _write(rules, conditions, checks, logic) -> None:
-    conn = get_connection()
-    try:
+    with connect() as conn:
         cur = conn.cursor()
 
         if checks:
@@ -569,29 +568,17 @@ def _write(rules, conditions, checks, logic) -> None:
                 conditions,
             )
 
-        conn.commit()
-    finally:
-        conn.close()
-
 
 def get_all_rule_definitions() -> dict:
     """Everything currently in the four rule tables (for GET /validation-rules)."""
-    conn = get_connection()
-    try:
-        conn.row_factory = None
-        cur = conn.cursor()
-
-        def rows(sql):
-            cur.execute(sql)
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
-
+    with connect() as conn:
         return {
-            "rules": rows("SELECT * FROM val_rules ORDER BY rule_id"),
-            "conditions": rows(
-                "SELECT * FROM val_rule_conditions ORDER BY rule_id, id"),
-            "checks": rows("SELECT * FROM val_checks ORDER BY check_id"),
-            "logic": rows("SELECT * FROM val_logic ORDER BY logic_id"),
+            "rules": query_rows(
+                "SELECT * FROM val_rules ORDER BY rule_id", conn=conn),
+            "conditions": query_rows(
+                "SELECT * FROM val_rule_conditions ORDER BY rule_id, id", conn=conn),
+            "checks": query_rows(
+                "SELECT * FROM val_checks ORDER BY check_id", conn=conn),
+            "logic": query_rows(
+                "SELECT * FROM val_logic ORDER BY logic_id", conn=conn),
         }
-    finally:
-        conn.close()

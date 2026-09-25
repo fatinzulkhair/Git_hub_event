@@ -17,7 +17,7 @@
       "FID": "QCLUXXf00000023000018",
       "UKEOID": "",
       "UKFID": "0ims9SUpP0txasdavB2",
-      "SGLN": "urn:epc:id:sgln:7173736.79084.0"
+      "SGLN": "urn:epc:id:sgln:71asdjpaksjdp73736.79084.0"
     },
     {
       "systemCode": "ACasaDC",
@@ -25,7 +25,7 @@
       "EOID": "LEBGR1e003Tp4N3J",
       "FID": "LEBGR1f005OF8asda4ya",
       "UKEOID": "4276",
-      "UKFID": "hQsJAyxU94KFfK9",
+      "UKFID": "hQsJAyxU94asldka;lsdkKFfK9",
       "SGLN": "urn:epc:id:sgln:1233367.11754.0"
     },
     {
@@ -34,14 +34,14 @@
       "EOID": "LEBGR1e003Tasdp4N3J",
       "FID": "",
       "UKEOID": "2745",
-      "UKFID": "8GrI42lHnslSc05",
+      "UKFID": "8GrI42lasdooka;sldHnslSc05",
       "SGLN": "urn:epc:id:sgln:1233367.10054.0"
     },
     {
       "systemCode": "ACD123C",
       "businessEntityCode": "BGN1",
       "EOID": "LEBGR1e003Tp4N3J",
-      "FID": "LEBGR1f0asd05OF84yaBGN1",
+      "FID": "LEBGR1f0asd0asldasldk5OF84yaBGN1",
       "UKEOID": "4068",
       "UKFID": "",
       "SGLN": "urn:epc:id:sgln:1233367.11164.0"

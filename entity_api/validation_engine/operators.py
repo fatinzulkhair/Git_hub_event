@@ -14,32 +14,10 @@ the documented rule:
 
 import regex
 
+from .values import is_empty, split_csv
+
 _OR_ACROSS_VALUES = {"equals", "not_equals", "contains", "starts_with", "ends_with", "regex"}
 _WHOLE_LIST = {"in", "not_in"}
-
-
-def _split_expected(expected_value) -> list:
-    if expected_value is None:
-        return []
-    text = str(expected_value)
-    if text.strip() == "":
-        return []
-    return [v.strip() for v in text.split(",")]
-
-
-def _is_empty(value) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, float):
-        try:
-            import math
-            if math.isnan(value):
-                return True
-        except (TypeError, ValueError):
-            pass
-    if isinstance(value, str) and value.strip() == "":
-        return True
-    return False
 
 
 def _single_op(operator: str, value, expected: str) -> bool:
@@ -73,9 +51,9 @@ def evaluate_operator(value, operator: str, expected_value) -> bool:
     op = operator.strip().lower()
 
     if op == "exists":
-        return not _is_empty(value)
+        return not is_empty(value)
 
-    values = _split_expected(expected_value)
+    values = split_csv(expected_value)
 
     if op == "in":
         return str(value) in values

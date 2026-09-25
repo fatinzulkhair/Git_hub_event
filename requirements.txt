@@ -3,7 +3,6 @@ pydantic>=2
 uvicorn[standard]
 pandas
 python-multipart
-anyascii
 regex
 sqlalchemy
 pyodbc

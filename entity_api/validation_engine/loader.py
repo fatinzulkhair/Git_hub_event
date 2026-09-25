@@ -2,107 +2,82 @@
 =====================================================
 validation_engine: /loader.py
 =====================================================
-Reads the table-driven rule definitions (val_rules,
-val_rule_conditions, val_checks, val_logic) out of SQLite.
+Reads the table-driven rule definitions (val_rules, val_rule_conditions,
+val_checks, val_logic) out of SQLite, and writes results back.
 
-No caching on purpose: these tables are small and meant to be
-edited by users, so every payload should see the latest rules
-without a restart.
+The four tables are read together into a RuleSet — one connection, four
+queries, per payload — and the engine then resolves Check/Logic ids against
+that in-memory snapshot. Rules are still never cached beyond a single
+request, so an edit through POST /validation-rules applies to the very next
+payload without a restart.
 """
 
-import pandas as pd
+from dataclasses import dataclass, field
+from typing import Optional
 
-from ..database import get_connection
-
-
-def _is_nan(value) -> bool:
-    return isinstance(value, float) and value != value  # NaN != NaN
+from ..database import connect, query_rows, refresh_validation_tables
 
 
-def _clean_row(row: dict) -> dict:
-    """pandas turns SQL NULL into NaN (even on object/string-dtype
-    columns, in pandas 3.x), and NaN is truthy in Python
-    (bool(float('nan')) is True) — every `if row.get('x')` check in
-    this engine would then misfire on an empty column. Normalize NaN
-    to real None right after reading, per-value, since DataFrame-level
-    .where()/.fillna() don't reliably do this across pandas versions
-    with the newer string dtype."""
-    return {k: (None if _is_nan(v) else v) for k, v in row.items()}
+@dataclass
+class RuleSet:
+    """One payload's snapshot of the rule tables."""
+
+    rules: list = field(default_factory=list)              # active val_rules rows
+    conditions: dict = field(default_factory=dict)         # rule_id  -> [rows]
+    checks: dict = field(default_factory=dict)             # check_id -> row
+    logic: dict = field(default_factory=dict)              # logic_id -> row
+
+    def conditions_for(self, rule_id: str) -> list:
+        return self.conditions.get(rule_id, [])
+
+    def check(self, check_id: str) -> Optional[dict]:
+        return self.checks.get(check_id)
+
+    def logic_for(self, logic_id: str) -> Optional[dict]:
+        return self.logic.get(logic_id)
 
 
-def _clean_records(df: pd.DataFrame) -> list:
-    return [_clean_row(r) for r in df.to_dict(orient="records")]
+def load_ruleset(conn=None) -> RuleSet:
+    """Read every active rule and all of its supporting rows."""
+    rules = query_rows("SELECT * FROM val_rules WHERE active = 'Y'", conn=conn)
+
+    conditions: dict = {}
+    for row in query_rows("SELECT * FROM val_rule_conditions", conn=conn):
+        conditions.setdefault(row.get("rule_id"), []).append(row)
+
+    return RuleSet(
+        rules=rules,
+        conditions=conditions,
+        checks={r["check_id"]: r for r in query_rows("SELECT * FROM val_checks", conn=conn)},
+        logic={r["logic_id"]: r for r in query_rows("SELECT * FROM val_logic", conn=conn)},
+    )
 
 
-def get_active_rules() -> list:
-    conn = get_connection()
-    try:
-        df = pd.read_sql_query(
-            "SELECT * FROM val_rules WHERE active = 'Y'",
-            conn,
-        )
-        return _clean_records(df)
-    finally:
-        conn.close()
+def insert_validation_results(rows: list, conn=None) -> None:
+    """Write one batch of (record, rule) outcomes.
 
+    `rows` are (entity_hash, entity_id, location_id, source, rule_id, passed,
+    severity, status, description) tuples — see rule_engine.run_all_rules.
 
-def get_conditions(rule_id: str) -> list:
-    conn = get_connection()
-    try:
-        df = pd.read_sql_query(
-            "SELECT * FROM val_rule_conditions WHERE rule_id = ?",
-            conn,
-            params=(rule_id,),
-        )
-        return _clean_records(df)
-    finally:
-        conn.close()
+    The full history goes to validation_results; latest_validation_rules and
+    validation_summary are then re-derived for the records this batch touched,
+    in the same transaction.
+    """
+    rows = list(rows)
+    if not rows:
+        return
 
-
-def get_check(check_id: str) -> dict:
-    conn = get_connection()
-    try:
-        df = pd.read_sql_query(
-            "SELECT * FROM val_checks WHERE check_id = ?",
-            conn,
-            params=(check_id,),
-        )
-        if df.empty:
-            return None
-        return _clean_row(df.iloc[0].to_dict())
-    finally:
-        conn.close()
-
-
-def get_logic(logic_id: str) -> dict:
-    conn = get_connection()
-    try:
-        df = pd.read_sql_query(
-            "SELECT * FROM val_logic WHERE logic_id = ?",
-            conn,
-            params=(logic_id,),
-        )
-        if df.empty:
-            return None
-        return _clean_row(df.iloc[0].to_dict())
-    finally:
-        conn.close()
-
-
-def insert_validation_result(entity_id: int, entity_hash: str, rule_id: str,
-                              passed: bool, severity: str, status,
-                              description: str) -> None:
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        cursor.execute(
+    with connect(conn) as active:
+        since_id = active.execute(
+            "SELECT COALESCE(MAX(id), 0) FROM validation_results"
+        ).fetchone()[0]
+        active.executemany(
             """
             INSERT INTO validation_results
-            (entity_hash, entity_id, rule_id, passed, severity, status, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (entity_hash, entity_id, location_id, source, rule_id,
+             passed, severity, status, description)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (entity_hash, entity_id, rule_id, passed, severity, status, description),
+            rows,
         )
-        conn.commit()
-    finally:
-        conn.close()
+        refresh_validation_tables(active, since_id=since_id)

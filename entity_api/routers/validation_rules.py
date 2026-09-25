@@ -2,11 +2,7 @@
 =====================================================
 ROUTER: /validation-rules
 =====================================================
-Create validation rules over the API (instead of editing
-seed_validation_rules.py by hand) and read back everything currently
-in the four rule tables.
-
-The request body is intentionally permissive — see rule_authoring.py
+The request body is intentionally permissive, see rule_authoring.py
 for every shape/alias that is accepted. In short you may POST:
 
   * a single rule object                     {"rule_id": "...", ...}
@@ -31,9 +27,7 @@ _EXAMPLE = {
     "description": "Location name must be Latin/ASCII only",
     "severity": "Warning",
     "on_exception_description": "Location name is not romanized",
-    "conditions": [
-        {"role": "Target", "field": "Name", "dataType": "Romanize"}
-    ],
+    "conditions": [{"role": "Target", "field": "Name", "dataType": "Romanize"}],
 }
 
 

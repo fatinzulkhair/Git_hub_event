@@ -15,23 +15,9 @@ Constraint string documented for that type, e.g.
 from datetime import datetime
 
 import regex
-from anyascii import anyascii
 
-from ..database import get_connection
-
-
-def _is_empty(value) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str) and value.strip() == "":
-        return True
-    try:
-        import math
-        if isinstance(value, float) and math.isnan(value):
-            return True
-    except (TypeError, ValueError):
-        pass
-    return False
+from ..database import query_one
+from .values import is_empty
 
 
 def _parse_constraint(constraint: str) -> dict:
@@ -56,11 +42,11 @@ def _parse_constraint(constraint: str) -> dict:
 # ---------------------------------------------------
 
 def check_exist(value, constraint: str = None) -> bool:
-    return not _is_empty(value)
+    return not is_empty(value)
 
 
 def check_text(value, constraint: str = None) -> bool:
-    if _is_empty(value):
+    if is_empty(value):
         return False
     opts = _parse_constraint(constraint)
     if opts.get("pattern") == "alpha_only":
@@ -69,7 +55,7 @@ def check_text(value, constraint: str = None) -> bool:
 
 
 def check_number(value, constraint: str = None) -> bool:
-    if _is_empty(value):
+    if is_empty(value):
         return False
     opts = _parse_constraint(constraint)
     number_type = opts.get("type", "float")
@@ -93,7 +79,7 @@ def check_boolean(value, constraint: str = None) -> bool:
 
 
 def check_date(value, constraint: str = None) -> bool:
-    if _is_empty(value):
+    if is_empty(value):
         return False
     opts = _parse_constraint(constraint)
     fmt = opts.get("format", "%Y-%m-%d")
@@ -105,14 +91,14 @@ def check_date(value, constraint: str = None) -> bool:
 
 
 def check_enum(value, expected_value: str = None) -> bool:
-    if _is_empty(value) or not expected_value:
+    if is_empty(value) or not expected_value:
         return False
     allowed = [v.strip() for v in str(expected_value).split(",")]
     return str(value) in allowed
 
 
 def check_regex(value, expected_value: str = None) -> bool:
-    if _is_empty(value) or not expected_value:
+    if is_empty(value) or not expected_value:
         return False
     return bool(regex.fullmatch(str(expected_value), str(value)) or regex.search(str(expected_value), str(value)))
 
@@ -120,14 +106,14 @@ def check_regex(value, expected_value: str = None) -> bool:
 def check_romanize(value, constraint: str = None) -> bool:
     """True if the value is already Latin/ASCII (mirrors the old
     validation_engine/romanize.py::is_latin)."""
-    if _is_empty(value):
+    if is_empty(value):
         return True  # nothing to romanize is not a violation
     text = str(value)
     return bool(regex.fullmatch(r"[\p{Latin}\p{N}\p{P}\p{Z}]+", text))
 
 
 def check_length(value, constraint: str = None) -> bool:
-    if _is_empty(value):
+    if is_empty(value):
         return False
     opts = _parse_constraint(constraint)
     length = len(str(value))
@@ -146,7 +132,7 @@ def check_unique(value, field_name: str, reference_source: str, ctx: dict) -> bo
       - anything else / empty: defaults to the 'entities' table using
         `field_name` as the column, excluding the current row's hash.
     """
-    if _is_empty(value):
+    if is_empty(value):
         return False
 
     ref = (reference_source or "").strip()
@@ -165,17 +151,13 @@ def check_unique(value, field_name: str, reference_source: str, ctx: dict) -> bo
         table, _, column = rest.partition(".")
         table = table.strip()
         column = column.strip() or field_name
-        conn = get_connection()
-        try:
-            cursor = conn.cursor()
-            cursor.execute(
-                f"SELECT COUNT(*) FROM {table} WHERE {column} = ? AND entity_hash != ?",
-                (value, current_hash or ""),
-            )
-            count = cursor.fetchone()[0]
-            return count == 0
-        finally:
-            conn.close()
+        row = query_one(
+            f"SELECT COUNT(*) AS matches FROM {table} "
+            f"WHERE {column} = ? AND entity_hash != ?",
+            (value, current_hash or ""),
+            conn=ctx.get("conn") if ctx else None,
+        )
+        return row["matches"] == 0
 
     # Unknown reference source: fail closed rather than silently pass
     return False
