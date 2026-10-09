@@ -1,0 +1,231 @@
+
+		{
+			"Customer": {
+				"Code": "PMI",
+				"Name": "Philip Morris International",
+				"Owner": "Philip Morris International"
+			},
+			"PrimaryProductKey": "urn:inexto:id:prd:tobacco:pmi:favp:DA000001.00.3",
+			"ProductType": {
+				"Name": "Shipping Case"
+			},
+			"ProductDefinition": {
+				"Description": "HOLDER IQOS (SINGLE LINE-UP) OPK 1",
+				"ProductDefinitionKey": "urn:inexto:id:prdd:tobacco:pmi:DA000001",
+				"ProductCategory": {
+					"Name": "Reduced Risk Products HTP Holder"
+				},
+				"BrandFamily": {
+					"Name": "SNGLELUP",
+					"Description": "(SINGLE LINE-UP)",
+					"ParentBrandFamily": {
+						"Name": "IQOS",
+						"Description": "IQOS",
+						"ParentBrandFamily": null
+					}
+				},
+				"ProductDefinitionProperties": [
+					{
+						"Name": "DesignMarketCode",
+						"Value": "JP04"
+					},
+					{
+						"Name": "DesignMarketDescription",
+						"Value": "JAPAN DOM"
+					},
+					{
+						"Name": "SubDesignMarketCode",
+						"Value": "001"
+					},
+					{
+						"Name": "SubDesignMarketDescription",
+						"Value": "-"
+					}
+				]
+			},
+			"ProductProperties": {
+				"TpmProduct": "False",
+				"RelevantForTrackingSince": "2016-01-01",
+				"ProductTypeCode": "M0301",
+				"InextorPackPrint": "AGP",
+				"InextorOuterPrint": "AUT"
+			},
+			"AlternateProductKeys": [
+				{
+					"ProductKey": "urn:inexto:id:prd:msku:DA000001.00",
+					"ProductKeyType": 0,
+					"ProductKeyMode": 2
+				},
+				{
+					"ProductKey": "urn:inexto:id:prd:gtin:05410706808575",
+					"ProductKeyType": 1,
+					"ProductKeyMode": 0
+				},
+				{
+					"ProductKey": "urn:inexto:id:prd:gtin:msku:05410706808575.DA000001.00",
+					"ProductKeyType": 0,
+					"ProductKeyMode": 2
+				},
+				{
+					"ProductKey": "urn:inexto:id:prd:gtin:bv:05410706808575.00",
+					"ProductKeyType": 2,
+					"ProductKeyMode": 2
+				}
+			],
+			"Units": [
+				{
+					"UnitTypeName": "Count",
+					"Quantity": 50.0,
+					"BaseUnit": "Piece"
+				}
+			],
+			"ChildProducts": [
+				{
+					"Quantity": 50.0,
+					"Customer": {
+						"Code": "PMI",
+						"Name": "Philip Morris International",
+						"Owner": "Philip Morris International"
+					},
+					"PrimaryProductKey": "urn:inexto:id:prd:tobacco:pmi:favp:DA000001.00.2",
+					"ProductType": {
+						"Name": "Bundle"
+					},
+					"ProductDefinition": {
+						"Description": "HOLDER IQOS (SINGLE LINE-UP) OPK 1",
+						"ProductDefinitionKey": "urn:inexto:id:prdd:tobacco:pmi:DA000001",
+						"ProductCategory": {
+							"Name": "Reduced Risk Products HTP Holder"
+						},
+						"BrandFamily": {
+							"Name": "SNGLELUP",
+							"Description": "(SINGLE LINE-UP)",
+							"ParentBrandFamily": {
+								"Name": "IQOS",
+								"Description": "IQOS",
+								"ParentBrandFamily": null
+							}
+						},
+						"ProductDefinitionProperties": [
+							{
+								"Name": "DesignMarketCode",
+								"Value": "JP04"
+							},
+							{
+								"Name": "DesignMarketDescription",
+								"Value": "JAPAN DOM"
+							},
+							{
+								"Name": "SubDesignMarketCode",
+								"Value": "001"
+							},
+							{
+								"Name": "SubDesignMarketDescription",
+								"Value": "-"
+							}
+						]
+					},
+					"ProductProperties": {
+						"PackagingType": "NEUTRAL OUTER",
+						"TpmProduct": "False",
+						"ProductTypeCode": "M0301",
+						"InextorPackPrint": "AGP",
+						"InextorOuterPrint": "AUT"
+					},
+					"AlternateProductKeys": [
+						{
+							"ProductKey": "urn:inexto:id:prd:msku:DA000001.00",
+							"ProductKeyType": 0,
+							"ProductKeyMode": 2
+						}
+					],
+					"Units": [
+						{
+							"UnitTypeName": "Count",
+							"Quantity": 1.0,
+							"BaseUnit": "Piece"
+						}
+					],
+					"ChildProducts": [
+						{
+							"Quantity": 1.0,
+							"Customer": {
+								"Code": "PMI",
+								"Name": "Philip Morris International",
+								"Owner": "Philip Morris International"
+							},
+							"PrimaryProductKey": "urn:inexto:id:prd:tobacco:pmi:favp:DA000001.00.1",
+							"ProductType": {
+								"Name": "Pack"
+							},
+							"ProductDefinition": {
+								"Description": "HOLDER IQOS (SINGLE LINE-UP) OPK 1",
+								"ProductDefinitionKey": "urn:inexto:id:prdd:tobacco:pmi:DA000001",
+								"ProductCategory": {
+									"Name": "Reduced Risk Products HTP Holder"
+								},
+								"BrandFamily": {
+									"Name": "SNGLELUP",
+									"Description": "(SINGLE LINE-UP)",
+									"ParentBrandFamily": {
+										"Name": "IQOS",
+										"Description": "IQOS",
+										"ParentBrandFamily": null
+									}
+								},
+								"ProductDefinitionProperties": [
+									{
+										"Name": "DesignMarketCode",
+										"Value": "JP04"
+									},
+									{
+										"Name": "DesignMarketDescription",
+										"Value": "JAPAN DOM"
+									},
+									{
+										"Name": "SubDesignMarketCode",
+										"Value": "001"
+									},
+									{
+										"Name": "SubDesignMarketDescription",
+										"Value": "-"
+									}
+								]
+							},
+							"ProductProperties": {
+								"PackagingType": "OTHER PACK TYPE",
+								"TpmProduct": "False",
+								"ProductTypeCode": "M0301",
+								"InextorPackPrint": "AGP",
+								"InextorOuterPrint": "AUT"
+							},
+							"AlternateProductKeys": [
+								{
+									"ProductKey": "urn:inexto:id:prd:msku:DA000001.00",
+									"ProductKeyType": 0,
+									"ProductKeyMode": 2
+								},
+								{
+									"ProductKey": "urn:inexto:id:prd:gtin:04930941001445",
+									"ProductKeyType": 1,
+									"ProductKeyMode": 0
+								},
+								{
+									"ProductKey": "urn:inexto:id:prd:gtin:msku:04930941001445.DA000001.00",
+									"ProductKeyType": 0,
+									"ProductKeyMode": 2
+								}
+							],
+							"Units": [
+								{
+									"UnitTypeName": "Count",
+									"Quantity": 1.0,
+									"BaseUnit": "Piece"
+								}
+							],
+							"ChildProducts": null
+						}
+					]
+				}
+			]
+		}

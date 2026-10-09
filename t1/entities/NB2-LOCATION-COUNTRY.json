@@ -1,0 +1,30 @@
+{
+  "rules": [
+    {
+      "rule_id": "NB2-LOCATION-COUNTRY",
+      "validation_type": "Location Master Data - Completeness",
+      "function_name": null,
+      "check_id": null,
+      "description": "country must exist",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -22,
+      "on_exception_description": "country is missing"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "NB2-LOCATION-COUNTRY",
+      "role": "Target",
+      "field_name": "country",
+      "operator": null,
+      "expected_value": null,
+      "data_type": "Exist",
+      "constraint_expr": null,
+      "reference_source": null,
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}

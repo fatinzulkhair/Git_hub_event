@@ -23,11 +23,13 @@ from .database import (
     connect,
     query_df,
     query_one,
+    query_rows,
 )
 from .hashing import generate_entity_hash
 from .validation_engine.loader import insert_validation_results, load_ruleset
 from .validation_engine.rule_engine import run_all_rules
 from .validation_engine.values import CaseInsensitiveRecord
+from .validation_logger import write_failure_log
 
 
 # ---------------------------------------------------
@@ -143,6 +145,15 @@ def _to_location_record(payload: dict) -> dict:
     }
 
 
+def _failed_outcomes(outcomes: list) -> list:
+    """The rule outcomes that failed, as they go into a log file."""
+    return [
+        {key: value for key, value in outcome.items() if key != "passed"}
+        for outcome in outcomes
+        if not outcome["passed"]
+    ]
+
+
 def _process_postings(spec: PairTables, payloads: list, to_record, source: str) -> dict:
     """Store every posting, then validate each one against the join of the
     entity and location tables. Used by both POST endpoints."""
@@ -159,6 +170,7 @@ def _process_postings(spec: PairTables, payloads: list, to_record, source: str) 
         # Unique check reuses this connection.
         ctx = {"conn": conn}
         result_rows = []
+        pending_logs = []  # (detail, log) for each record that failed a rule
 
         for payload in payloads:
             record = to_record(payload)
@@ -179,7 +191,7 @@ def _process_postings(spec: PairTables, payloads: list, to_record, source: str) 
                 joined = {**posted_fields, **other_fields}
                 entity_id, location_id = counterpart_id, stored["history_id"]
 
-            _, rows = run_all_rules(
+            outcomes, rows = run_all_rules(
                 joined,
                 entity_hash,
                 entity_id=entity_id,
@@ -189,8 +201,9 @@ def _process_postings(spec: PairTables, payloads: list, to_record, source: str) 
                 ruleset=ruleset,
             )
             result_rows.extend(rows)
+            errors = _failed_outcomes(outcomes)
 
-            results.append({
+            detail = {
                 "status": "inserted",
                 "id": stored["history_id"],
                 "new_record": stored["is_new"],
@@ -198,9 +211,37 @@ def _process_postings(spec: PairTables, payloads: list, to_record, source: str) 
                 "systemCode": stored["systemCode"],
                 "businessEntityCode": stored["businessEntityCode"],
                 "joined": counterpart is not None,
-            })
+                "failed_rules": [error["rule_id"] for error in errors],
+                "log_file": None,
+            }
+            results.append(detail)
+
+            if errors:
+                fields = CaseInsensitiveRecord(joined)
+                record = {
+                    "systemCode": fields.get("systemCode"),
+                    "businessEntityCode": fields.get("businessEntityCode"),
+                    "country": fields.get("country"),
+                }
+                pending_logs.append((detail, {
+                    "entity_hash": entity_hash,
+                    "record": record,
+                    "contacts": responsible_contacts_for(
+                        record["systemCode"], record["country"], conn=conn
+                    ),
+                    "run": {
+                        "source": source,
+                        "entity_id": entity_id,
+                        "location_id": location_id,
+                        "errors": errors,
+                    },
+                }))
 
         insert_validation_results(result_rows, conn=conn)
+
+    # Committed: now one log file per failed record (see validation_logger).
+    for detail, log in pending_logs:
+        detail["log_file"] = write_failure_log(**log)
 
     new_records = sum(1 for r in results if r["new_record"])
     return {
@@ -227,6 +268,7 @@ def process_payload(payload: dict) -> dict:
         mappings = [payload]
 
     return _process_postings(ENTITIES, mappings, _to_entity_record, "entity")
+
 
 
 def process_payload_location(payload) -> dict:
@@ -286,6 +328,22 @@ def insert_responsible_contacts(contacts: list) -> dict:
         "skipped": len(contacts) - inserted,
         "details": details,
     }
+
+
+def responsible_contacts_for(system_code, country, conn=None) -> list:
+    """Who to contact about one record: the contacts for its system and for
+    its country (the location's country). Names match case-insensitively."""
+    return query_rows(
+        """
+        SELECT related_field, related_field_name, person_name, contact
+        FROM responsible_contact
+        WHERE (related_field = 'system'  AND related_field_name = ? COLLATE NOCASE)
+           OR (related_field = 'country' AND related_field_name = ? COLLATE NOCASE)
+        ORDER BY id
+        """,
+        (system_code, country),
+        conn=conn,
+    )
 
 
 # ---------------------------------------------------

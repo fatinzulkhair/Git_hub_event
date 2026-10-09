@@ -29,6 +29,8 @@ class PostedRecord(BaseModel):
     systemCode: Optional[str] = None
     businessEntityCode: Optional[str] = None
     joined: Optional[bool] = None      # the other side of the join exists
+    failed_rules: List[str] = []       # rule_ids this posting failed
+    log_file: Optional[str] = None     # its failed-validation log (validation_logger.py)
 
 
 class ProcessSummary(BaseModel):

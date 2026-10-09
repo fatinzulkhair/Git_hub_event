@@ -1,0 +1,30 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-TYPE-ENUM",
+      "validation_type": "Product Master Data - Packaging Level",
+      "function_name": null,
+      "check_id": null,
+      "description": "ProductType.Name must be a known packaging level",
+      "severity": "Warning",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Unknown ProductType (expected Shipping Case, Bundle or Pack)"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-TYPE-ENUM",
+      "role": "Target",
+      "field_name": "ProductType.Name",
+      "operator": null,
+      "expected_value": "Shipping Case,Bundle,Pack",
+      "data_type": "Enum",
+      "constraint_expr": null,
+      "reference_source": null,
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}

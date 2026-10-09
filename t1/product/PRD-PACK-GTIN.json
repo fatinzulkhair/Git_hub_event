@@ -1,0 +1,41 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-PACK-GTIN",
+      "validation_type": "Product Master Data - Identification",
+      "function_name": null,
+      "check_id": null,
+      "description": "A Pack must carry a GTIN alternate key",
+      "severity": "Warning",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Pack has no urn:inexto:id:prd:gtin:<14 digits> alternate key"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-PACK-GTIN",
+      "role": "Trigger",
+      "field_name": "ProductType.Name",
+      "operator": "equals",
+      "expected_value": "Pack",
+      "data_type": null,
+      "constraint_expr": null,
+      "reference_source": null,
+      "logical_group": null
+    },
+    {
+      "rule_id": "PRD-PACK-GTIN",
+      "role": "Target",
+      "field_name": "AlternateProductKeys.ProductKey",
+      "operator": null,
+      "expected_value": null,
+      "data_type": "Regex",
+      "constraint_expr": "urn:inexto:id:prd:gtin:\\d{14}",
+      "reference_source": null,
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}

@@ -1,0 +1,28 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-REQUIRED-FIELDS",
+      "validation_type": "Product Master Data - Completeness",
+      "function_name": null,
+      "check_id": "chk_product_required_fields",
+      "description": "Customer code, product type, definition key and description must be present",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Missing Customer.Code / ProductType.Name / ProductDefinitionKey / Description"
+    }
+  ],
+  "conditions": [],
+  "checks": [
+    {
+      "check_id": "chk_product_required_fields",
+      "check_type": "Data Type",
+      "field_names": "Customer.Code,ProductType.Name,ProductDefinition.ProductDefinitionKey,ProductDefinition.Description",
+      "check_value": "Exist",
+      "expected_value": null,
+      "reference_source": null,
+      "field_combine": "AND"
+    }
+  ],
+  "logic": []
+}

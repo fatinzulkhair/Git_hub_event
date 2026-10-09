@@ -1,0 +1,30 @@
+{
+  "rules": [
+    {
+      "rule_id": "NB2-ENTITY-EOID",
+      "validation_type": "Entity - Completeness",
+      "function_name": null,
+      "check_id": null,
+      "description": "EOID must exist",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -21,
+      "on_exception_description": "EOID is missing"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "NB2-ENTITY-EOID",
+      "role": "Target",
+      "field_name": "EOID",
+      "operator": null,
+      "expected_value": null,
+      "data_type": "Exist",
+      "constraint_expr": null,
+      "reference_source": null,
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}

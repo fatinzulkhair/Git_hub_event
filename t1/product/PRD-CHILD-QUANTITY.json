@@ -1,0 +1,41 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-CHILD-QUANTITY",
+      "validation_type": "Product Master Data - Hierarchy",
+      "function_name": null,
+      "check_id": null,
+      "description": "A child product must say how many of it one parent holds (at least 1)",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Child product Quantity is missing or below 1"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-CHILD-QUANTITY",
+      "role": "Trigger",
+      "field_name": "ParentProductKey",
+      "operator": "exists",
+      "expected_value": null,
+      "data_type": null,
+      "constraint_expr": null,
+      "reference_source": null,
+      "logical_group": null
+    },
+    {
+      "rule_id": "PRD-CHILD-QUANTITY",
+      "role": "Target",
+      "field_name": "Quantity",
+      "operator": null,
+      "expected_value": null,
+      "data_type": "Number",
+      "constraint_expr": "min=1",
+      "reference_source": null,
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}

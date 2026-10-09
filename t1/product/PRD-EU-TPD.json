@@ -1,0 +1,44 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-EU-TPD",
+      "validation_type": "Product Master Data - EU TPD",
+      "function_name": null,
+      "check_id": "logic_product_eu_tpd",
+      "description": "If the design market is in the EU/UK, TPPN and TPID must both be present; otherwise the rule passes automatically",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Missing TPPN/TPID for an EU/UK design market"
+    }
+  ],
+  "conditions": [],
+  "checks": [
+    {
+      "check_id": "chk_product_eu_uk_market",
+      "check_type": "Operator",
+      "field_names": "ProductDefinition.ProductDefinitionProperties.DesignMarketCode",
+      "check_value": "starts_with",
+      "expected_value": "AT,BE,BG,HR,CY,CZ,DK,EE,FI,FR,DE,GR,HU,IE,IT,LV,LT,LU,MT,NL,PL,PT,RO,SK,SI,ES,SE,GB,UK",
+      "reference_source": null,
+      "field_combine": "AND"
+    },
+    {
+      "check_id": "chk_product_tpd_identifiers",
+      "check_type": "Data Type",
+      "field_names": "ProductProperties.TPPN,ProductProperties.TPID",
+      "check_value": "Exist",
+      "expected_value": null,
+      "reference_source": null,
+      "field_combine": "AND"
+    }
+  ],
+  "logic": [
+    {
+      "logic_id": "logic_product_eu_tpd",
+      "if_check_id": "chk_product_eu_uk_market",
+      "then_check_id": "chk_product_tpd_identifiers",
+      "else_check_id": "True"
+    }
+  ]
+}

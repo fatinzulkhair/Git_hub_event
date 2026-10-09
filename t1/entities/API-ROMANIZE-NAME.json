@@ -1,0 +1,30 @@
+{
+  "rules": [
+    {
+      "rule_id": "API-ROMANIZE-NAME",
+      "validation_type": "Location Master Data - Romanization",
+      "function_name": null,
+      "check_id": null,
+      "description": "Location name must be Latin/ASCII only",
+      "severity": "Warning",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Location name is not romanized"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "API-ROMANIZE-NAME",
+      "role": "Target",
+      "field_name": "Name",
+      "operator": null,
+      "expected_value": null,
+      "data_type": "Romanize",
+      "constraint_expr": null,
+      "reference_source": null,
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}

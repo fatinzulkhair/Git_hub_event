@@ -1,0 +1,30 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-KEY-UNIQUE",
+      "validation_type": "Product Master Data - Duplicates",
+      "function_name": null,
+      "check_id": null,
+      "description": "The same PrimaryProductKey must not appear twice in one payload",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "PrimaryProductKey repeated within the payload"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-KEY-UNIQUE",
+      "role": "Target",
+      "field_name": "PrimaryProductKey",
+      "operator": null,
+      "expected_value": null,
+      "data_type": "Unique",
+      "constraint_expr": null,
+      "reference_source": "batch",
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}

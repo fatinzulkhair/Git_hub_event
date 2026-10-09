@@ -1,0 +1,226 @@
+
+	{
+		"Customer": {
+			"Code": "PMI",
+			"Name": "Philip Morris International",
+			"Owner": "Philip Morris International"
+		},
+		"PrimaryProductKey": "urn:inexto:id:prd:tobacco:pmi:favp:FA003115.00.3",
+		"ProductType": {
+			"Name": "Shipping Case"
+		},
+		"ProductDefinition": {
+			"Description": "L&M LIGHTS KS BOX 20",
+			"ProductDefinitionKey": "urn:inexto:id:prdd:tobacco:pmi:FA003115",
+			"ProductCategory": {
+				"Name": "Cigarettes"
+			},
+			"BrandFamily": {
+				"Name": "LIGHTS",
+				"Description": "LIGHTS",
+				"ParentBrandFamily": {
+					"Name": "L&M",
+					"Description": "L&M",
+					"ParentBrandFamily": null
+				}
+			},
+			"ProductDefinitionProperties": [
+				{
+					"Name": "DesignMarketCode",
+					"Value": "FR04"
+				},
+				{
+					"Name": "DesignMarketDescription",
+					"Value": "FRANCE DOM"
+				},
+				{
+					"Name": "SubDesignMarketCode",
+					"Value": "001"
+				},
+				{
+					"Name": "SubDesignMarketDescription",
+					"Value": "-"
+				}
+			]
+		},
+		"ProductProperties": {
+			"TPPN": "POM.006546",
+			"TPID": "00007-16-00488",
+			"TpmProduct": "False",
+			"RelevantForTrackingSince": "2016-01-01",
+			"ProductTypeCode": "F0101"
+		},
+		"AlternateProductKeys": [
+			{
+				"ProductKey": "urn:inexto:id:prd:msku:FA003115.00",
+				"ProductKeyType": 0,
+				"ProductKeyMode": 1
+			},
+			{
+				"ProductKey": "urn:inexto:id:prd:gtin:05410706508796",
+				"ProductKeyType": 1,
+				"ProductKeyMode": 0
+			},
+			{
+				"ProductKey": "urn:inexto:id:prd:gtin:msku:05410706508796.FA003115.00",
+				"ProductKeyType": 0,
+				"ProductKeyMode": 2
+			},
+			{
+				"ProductKey": "urn:inexto:id:prd:gtin:bv:05410706508796.02",
+				"ProductKeyType": 2,
+				"ProductKeyMode": 2
+			}
+		],
+		"Units": [
+			{
+				"UnitTypeName": "Count",
+				"Quantity": 5000.0,
+				"BaseUnit": "Piece"
+			}
+		],
+		"ChildProducts": [
+			{
+				"Quantity": 25.0,
+				"Customer": {
+					"Code": "PMI",
+					"Name": "Philip Morris International",
+					"Owner": "Philip Morris International"
+				},
+				"PrimaryProductKey": "urn:inexto:id:prd:tobacco:pmi:favp:FA003115.00.2",
+				"ProductType": {
+					"Name": "Bundle"
+				},
+				"ProductDefinition": {
+					"Description": "L&M LIGHTS KS BOX 20",
+					"ProductDefinitionKey": "urn:inexto:id:prdd:tobacco:pmi:FA003115",
+					"ProductCategory": {
+						"Name": "Cigarettes"
+					},
+					"BrandFamily": {
+						"Name": "LIGHTS",
+						"Description": "LIGHTS",
+						"ParentBrandFamily": {
+							"Name": "L&M",
+							"Description": "L&M",
+							"ParentBrandFamily": null
+						}
+					},
+					"ProductDefinitionProperties": [
+						{
+							"Name": "DesignMarketCode",
+							"Value": "FR04"
+						},
+						{
+							"Name": "DesignMarketDescription",
+							"Value": "FRANCE DOM"
+						},
+						{
+							"Name": "SubDesignMarketCode",
+							"Value": "001"
+						},
+						{
+							"Name": "SubDesignMarketDescription",
+							"Value": "-"
+						}
+					]
+				},
+				"ProductProperties": {
+					"PackagingType": "BUNDLE PAPER NORMAL",
+					"TPPN": "POM.006546",
+					"TPID": "00007-16-00488",
+					"TpmProduct": "False",
+					"ProductTypeCode": "F0101"
+				},
+				"AlternateProductKeys": [
+					{
+						"ProductKey": "urn:inexto:id:prd:msku:FA003115.00",
+						"ProductKeyType": 0,
+						"ProductKeyMode": 1
+					}
+				],
+				"Units": [
+					{
+						"UnitTypeName": "Count",
+						"Quantity": 200.0,
+						"BaseUnit": "Piece"
+					}
+				],
+				"ChildProducts": [
+					{
+						"Quantity": 10.0,
+						"Customer": {
+							"Code": "PMI",
+							"Name": "Philip Morris International",
+							"Owner": "Philip Morris International"
+						},
+						"PrimaryProductKey": "urn:inexto:id:prd:tobacco:pmi:favp:FA003115.00.1",
+						"ProductType": {
+							"Name": "Pack"
+						},
+						"ProductDefinition": {
+							"Description": "L&M LIGHTS KS BOX 20",
+							"ProductDefinitionKey": "urn:inexto:id:prdd:tobacco:pmi:FA003115",
+							"ProductCategory": {
+								"Name": "Cigarettes"
+							},
+							"BrandFamily": {
+								"Name": "LIGHTS",
+								"Description": "LIGHTS",
+								"ParentBrandFamily": {
+									"Name": "L&M",
+									"Description": "L&M",
+									"ParentBrandFamily": null
+								}
+							},
+							"ProductDefinitionProperties": [
+								{
+									"Name": "DesignMarketCode",
+									"Value": "FR04"
+								},
+								{
+									"Name": "DesignMarketDescription",
+									"Value": "FRANCE DOM"
+								},
+								{
+									"Name": "SubDesignMarketCode",
+									"Value": "001"
+								},
+								{
+									"Name": "SubDesignMarketDescription",
+									"Value": "-"
+								}
+							]
+						},
+						"ProductProperties": {
+							"PackagingType": "HINGE LID BOX",
+							"TPPN": "POM.006546",
+							"TPID": "00007-16-00488",
+							"TpmProduct": "False",
+							"ProductTypeCode": "F0101"
+						},
+						"AlternateProductKeys": [
+							{
+								"ProductKey": "urn:inexto:id:prd:msku:FA003115.00",
+								"ProductKeyType": 0,
+								"ProductKeyMode": 1
+							},
+							{
+								"ProductKey": "urn:inexto:id:prd:eutpd:00007-16-00488.POM%2e006546",
+								"ProductKeyType": 0,
+								"ProductKeyMode": 0
+							}
+						],
+						"Units": [
+							{
+								"UnitTypeName": "Count",
+								"Quantity": 20.0,
+								"BaseUnit": "Piece"
+							}
+						],
+						"ChildProducts": null
+					}
+				]
+			}
+		]
+	}

@@ -1,0 +1,12 @@
+[
+  { "product_code": "FA003115", "person_name": "Joko Widodo Saputra", "contact": "joko.saputra@example.com" },
+  { "product_code": "FA003115", "person_name": "Kartika Sari",        "contact": "kartika.sari@example.com" },
+  { "product_code": "FA003115", "person_name": "L&M Brand Team",      "contact": "Teams: L&M Brand Team" },
+  { "product_code": "FA003115", "person_name": "Lukas Meyer",         "contact": "lukas.meyer@example.com" },
+  { "product_code": "DK001129", "person_name": "Maya Lestari",        "contact": "maya.lestari@example.com" },
+  { "product_code": "DK001129", "person_name": "Nur Aini",            "contact": "Teams: Nur Aini" },
+  { "product_code": "DK001129", "person_name": "Oliver Brown",        "contact": "oliver.brown@example.com" },
+  { "product_code": "DA000001", "person_name": "Putu Ayu",            "contact": "putu.ayu@example.com" },
+  { "product_code": "DA000001", "person_name": "Rizky Hidayat",       "contact": "Teams: Rizky Hidayat" },
+  { "product_code": "DA000001", "person_name": "Sophie Laurent",      "contact": "sophie.laurent@example.com" }
+]

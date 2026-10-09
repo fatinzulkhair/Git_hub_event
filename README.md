@@ -11,21 +11,27 @@ A **FastAPI**-based API for storing JSON entities into SQLite, identifying each 
 3. [Running the Server](#running-the-server)
 4. [API Endpoints](#api-endpoints)
 5. [Entity Identity (hash)](#entity-identity-hash)
-6. [Dynamic Rule Engine](#dynamic-rule-engine)
-7. [Database Schema](#database-schema)
-8. [Adding a New Rule (no coding required)](#adding-a-new-rule-no-coding-required)
-9. [Notes](#notes)
+6. [Failed-Validation Log Files](#failed-validation-log-files)
+7. [Dynamic Rule Engine](#dynamic-rule-engine)
+8. [Database Schema](#database-schema)
+9. [Adding a New Rule (no coding required)](#adding-a-new-rule-no-coding-required)
+10. [Notes](#notes)
 
 ---
 
 ## Project Structure
 
 ```
-entity_api/
+(project root)
 ├── requirements.txt
-├── run.py                          # Entry point: python run.py
-├── seed_validation_rules.py        # Initial migration: seeds the val_* tables with the example rules
+├── entities_run.py                 # Entry point: python entities_run.py
 ├── entity_database.db              # Created automatically the first time the server runs
+├── entities_validation_logs/       # Created on the first failed validation: one log file per failed record
+├── entities_location_data/         # Sample inputs: sample_locations.json, sample_payload*.json, seed_rules_api_format.txt
+├── entities_notebook_testing/
+│   ├── seed_validation_rules.py    # Initial migration: seeds the val_* tables with the example rules
+│   ├── reset_db.ipynb              # Clear data tables / rules / log files, re-seed
+│   └── test_api.ipynb, test_api2.ipynb, test_create_rule.ipynb
 └── entity_api/
     ├── __init__.py
     ├── config.py                   # Global constants (DB name, API title, version, etc.)
@@ -33,6 +39,7 @@ entity_api/
     ├── hashing.py                  # generate_entity_hash()
     ├── schemas.py                  # Pydantic models for Swagger documentation
     ├── crud.py                     # Insert, location join, payload processing, queries
+    ├── validation_logger.py        # One JSON log file per record that fails a rule
     ├── rule_authoring.py           # Parses POST /validation-rules bodies -> the four val_* tables
     ├── main.py                     # App factory: builds FastAPI(), includes routers, startup event
     ├── routers/
@@ -58,6 +65,7 @@ entity_api/
 | `hashing.py` | Pure function that generates a SHA256 hash for an entity |
 | `schemas.py` | Pydantic models to keep the Swagger docs clean |
 | `crud.py` | Business logic: insert entity, join location master data, process payload, query |
+| `validation_logger.py` | Writes `log_<hash>_<date>.json` for every record that fails at least one rule |
 | `routers/entities.py` | HTTP endpoint definitions (routing), delegates logic to `crud.py` |
 | `main.py` | Wires all modules together into a single FastAPI `app` |
 | `validation_engine/loader.py` | Reads the four rule tables into one `RuleSet` per payload, and writes results back |
@@ -100,14 +108,16 @@ pyodbc
 ## Running the Server
 
 ```bash
-python run.py
+python entities_run.py
 ```
 
 or directly via uvicorn:
 
 ```bash
-uvicorn entity_api.main:app --reload
+uvicorn entity_api.main:app --reload --reload-dir entity_api
 ```
+
+Only `entity_api/` is watched for changes; watching the whole project would include `venv/`.
 
 The server runs at `http://localhost:8000`. Interactive API documentation (Swagger UI) is automatically available at:
 
@@ -115,14 +125,14 @@ The server runs at `http://localhost:8000`. Interactive API documentation (Swagg
 http://localhost:8000/docs
 ```
 
-The SQLite database (`entity_database.db`) is created automatically in the project root the first time the server starts, including every table used by the rule engine.
+The SQLite database (`entity_database.db`) is created automatically in the project root (whatever folder a script is started from) the first time the server starts, including every table used by the rule engine.
 
 ### Seeding the example rules (one-time)
 
 Before processing data, run this once to load the 8 example rules (VAL-001 through VAL-008) into the database:
 
 ```bash
-python seed_validation_rules.py
+python entities_notebook_testing/seed_validation_rules.py
 ```
 
 The script is safe to run more than once (idempotent) — it overwrites (`INSERT OR REPLACE`) rows sharing the same `rule_id` / `check_id` / `logic_id`.
@@ -337,6 +347,49 @@ Either side may be missing, and the engine always emits a built-in result for th
 
 ---
 
+## Failed-Validation Log Files
+
+Every record that fails **at least one** rule (any severity, including the built-in
+`JOIN-COMPLETENESS`) gets one JSON file in `entities_validation_logs/` (set
+`ENTITY_LOG_DIR` to change it):
+
+```
+log_<first 12 characters of entity_hash>_<YYYYMMDD>.json      e.g. log_28755534b8b0_20261009.json
+```
+
+- **One record, one file.** All the rules a record failed in a run are listed in that one file.
+- Posting the same record again on the same day **adds** the new run to `validations`; the next day starts a new file.
+- The file names the record's **responsible contacts**: the `responsible_contact` rows for its `systemCode` (`system`) and its location's country (`country`), matched case-insensitively.
+- The POST response gives each posting's `failed_rules` and `log_file` (`null` when nothing failed).
+- Files are written **after** the database commit. If one cannot be written, the request still succeeds: the error goes to the server console and `log_file` is `null`.
+
+```json
+{
+  "program": "entities",
+  "entity_hash": "28755534b8b0ba9405dc6740f02b37abc10a6483124d3a1653ea0deb9749f2e0",
+  "date": "2026-10-09",
+  "record": { "systemCode": "SYS-A", "businessEntityCode": "BE-002", "country": "GB" },
+  "responsible_contacts": [
+    { "related_field": "country", "related_field_name": "GB", "person_name": "UK Owner", "contact": "uk@example.com" }
+  ],
+  "validations": [
+    {
+      "validated_at": "2026-10-09T14:47:24+07:00",
+      "failed_rule_count": 2,
+      "source": "location",
+      "entity_id": 7,
+      "location_id": 7,
+      "errors": [
+        { "rule_id": "VAL-UK-Field", "severity": "Critical", "status": -1, "description": "Missing UK_TPD/UI_ID/UKSLL for UK location" },
+        { "rule_id": "FIELD-EXIST",  "severity": "Critical", "status": -1, "description": "Missing UK_TPD/UI_ID/UKSLL for UK location" }
+      ]
+    }
+  ]
+}
+```
+
+---
+
 ## Dynamic Rule Engine
 
 Previously, adding a validation rule meant writing a new Python function (`eu_detect`, `romanizecheck`) and wiring it manually into `validation_rules_engine`. Now, every rule is stored in **four database tables**, and a generic engine reads and executes them.
@@ -482,7 +535,7 @@ A record is rewritten wholesale each time it is validated: its old rows are clea
 2. **A rule with IF/THEN/ELSE logic, or one you want to reuse in other rules:** create a row in `val_checks` for each atomic check, combine them via `val_logic`, then set `val_rules.check_id` to that Logic ID or Check ID.
 3. Set `active = 'Y'`. The rule is active on the very next request — no server restart required.
 
-You can do this three ways: edit `seed_validation_rules.py`, poke the tables directly via SQLite, or **`POST /validation-rules`** (see above).
+You can do this three ways: edit `entities_notebook_testing/seed_validation_rules.py`, poke the tables directly via SQLite, or **`POST /validation-rules`** (see above).
 
 ### Accepted request shapes for `POST /validation-rules`
 
@@ -504,5 +557,6 @@ Field aliases are broad — e.g. `field` / `fieldName` / `field_names` → `fiel
 ---
 
 ## Notes
-- Default database: SQLite (`entity_database.db`), configurable via the `ENTITY_DB_NAME` environment variable.
+- Default database: SQLite (`entity_database.db`), configurable via the `ENTITY_DB_NAME` environment variable. A relative name is resolved against the project root.
+- Failed-validation logs: `entities_validation_logs/`, configurable via `ENTITY_LOG_DIR` (also resolved against the project root).
 - The full entity payload (`entity_json`) is still stored intact in the database, even though a few fields (`EOID`, `FID`, etc.) are also extracted into their own columns for fast querying.

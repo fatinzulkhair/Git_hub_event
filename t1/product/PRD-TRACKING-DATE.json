@@ -1,0 +1,41 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-TRACKING-DATE",
+      "validation_type": "Product Master Data - Dates",
+      "function_name": null,
+      "check_id": null,
+      "description": "RelevantForTrackingSince, when given, must be a YYYY-MM-DD date",
+      "severity": "Warning",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "RelevantForTrackingSince is not a YYYY-MM-DD date"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-TRACKING-DATE",
+      "role": "Trigger",
+      "field_name": "ProductProperties.RelevantForTrackingSince",
+      "operator": "exists",
+      "expected_value": null,
+      "data_type": null,
+      "constraint_expr": null,
+      "reference_source": null,
+      "logical_group": null
+    },
+    {
+      "rule_id": "PRD-TRACKING-DATE",
+      "role": "Target",
+      "field_name": "ProductProperties.RelevantForTrackingSince",
+      "operator": null,
+      "expected_value": null,
+      "data_type": "Date",
+      "constraint_expr": "format=%Y-%m-%d",
+      "reference_source": null,
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}

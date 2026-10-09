@@ -1,0 +1,12 @@
+[
+  { "related_field": "system",  "related_field_name": "ACDC",      "person_name": "Aisyah Rahman",   "contact": "aisyah.rahman@example.com" },
+  { "related_field": "system",  "related_field_name": "ACasdasDC", "person_name": "Budi Santoso",    "contact": "budi.santoso@example.com" },
+  { "related_field": "system",  "related_field_name": "ACD123C",   "person_name": "Chen Wei Ling",   "contact": "Teams: Chen Wei Ling" },
+  { "related_field": "system",  "related_field_name": "ACDasC",    "person_name": "Dimas Pratama",   "contact": "dimas.pratama@example.com" },
+  { "related_field": "system",  "related_field_name": "SYS-A",     "person_name": "Eka Putri",       "contact": "Teams: Eka Putri" },
+  { "related_field": "country", "related_field_name": "MY",        "person_name": "Farid Hassan",    "contact": "farid.hassan@example.com" },
+  { "related_field": "country", "related_field_name": "SG",        "person_name": "Grace Tan",       "contact": "grace.tan@example.com" },
+  { "related_field": "country", "related_field_name": "DE",        "person_name": "Hannah Schmidt",  "contact": "Teams: Hannah Schmidt" },
+  { "related_field": "country", "related_field_name": "UK",        "person_name": "Ian Clarke",      "contact": "ian.clarke@example.com" },
+  { "related_field": "country", "related_field_name": "BG",        "person_name": "Ivana Petrova",   "contact": "ivana.petrova@example.com" }
+]

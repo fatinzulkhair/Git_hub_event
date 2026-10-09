@@ -14,3 +14,7 @@ entity_database.db
 
 # File Log
 *.log
+
+# Failed-validation log files (written by the APIs)
+entities_validation_logs/
+product_validation_logs/

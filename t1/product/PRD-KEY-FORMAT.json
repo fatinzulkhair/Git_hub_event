@@ -1,0 +1,30 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-KEY-FORMAT",
+      "validation_type": "Product Master Data - Key Format",
+      "function_name": null,
+      "check_id": null,
+      "description": "PrimaryProductKey must be an inexto product URN",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "PrimaryProductKey is not urn:inexto:id:prd:..."
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-KEY-FORMAT",
+      "role": "Target",
+      "field_name": "PrimaryProductKey",
+      "operator": null,
+      "expected_value": null,
+      "data_type": "Regex",
+      "constraint_expr": "^urn:inexto:id:prd:.+$",
+      "reference_source": null,
+      "logical_group": null
+    }
+  ],
+  "checks": [],
+  "logic": []
+}
