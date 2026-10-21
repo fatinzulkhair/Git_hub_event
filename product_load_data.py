@@ -14,8 +14,8 @@ The fastest way in — no HTTP, and one transaction for everything:
      the detail tables (alternate keys / units / properties) written in
      batches.
 
-The API server may stay running: SQLite serialises the write, and the server
-sees the new rows on its next request.
+Writes go to the SQL Server database in server_testing/config.json. The API
+server may stay running: it sees the new rows on its next request.
 """
 
 import json

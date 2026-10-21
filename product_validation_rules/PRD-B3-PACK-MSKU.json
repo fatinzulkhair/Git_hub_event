@@ -1,0 +1,31 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-B3-PACK-MSKU",
+      "validation_type": "Product Master Data - Alternate product keys",
+      "description": "A Pack needs an AlternateProductKey starting with urn:inexto:id:prd:msku, with ProductKeyType and ProductKeyMode",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Pack has no complete msku alternate product key"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-B3-PACK-MSKU",
+      "role": "Trigger",
+      "field_name": "ProductType.Name",
+      "operator": "equals",
+      "expected_value": "Pack"
+    },
+    {
+      "rule_id": "PRD-B3-PACK-MSKU",
+      "role": "Target",
+      "field_name": "AlternateProductKeys[].ProductKey",
+      "data_type": "ListEntries",
+      "operator": "starts_with",
+      "expected_value": "urn:inexto:id:prd:msku",
+      "constraint_expr": "min=1;required=ProductKeyType,ProductKeyMode"
+    }
+  ]
+}

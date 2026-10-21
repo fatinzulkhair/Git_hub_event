@@ -48,7 +48,7 @@ def create_validation_rules(
 
 @router.get(
     "",
-    summary="List every row in val_rules / val_rule_conditions / val_checks / val_logic",
+    summary="List every row in entities_val_rules / entities_val_rule_conditions / entities_val_checks / entities_val_logic",
 )
 def list_validation_rules():
     return JSONResponse(content=rule_authoring.get_all_rule_definitions())

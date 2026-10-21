@@ -1,0 +1,36 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-B1-SHIPPING-CASE-KEYS",
+      "validation_type": "Product Master Data - Alternate product keys",
+      "description": "A Shipping Case needs at least one AlternateProductKey starting with urn:inexto:id:prd:msku / gtin / gtin:msku / gtin:bv, each with ProductKeyType and ProductKeyMode",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Shipping Case alternate product keys are incomplete"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-B1-SHIPPING-CASE-KEYS",
+      "role": "Trigger",
+      "field_name": "ProductType.Name",
+      "operator": "equals",
+      "expected_value": "Shipping Case"
+    },
+    {
+      "rule_id": "PRD-B1-SHIPPING-CASE-KEYS",
+      "role": "Target",
+      "field_name": "AlternateProductKeys[].ProductKey",
+      "data_type": "ListEntries",
+      "operator": "starts_with",
+      "expected_value": [
+        "urn:inexto:id:prd:msku",
+        "urn:inexto:id:prd:gtin",
+        "urn:inexto:id:prd:gtin:msku",
+        "urn:inexto:id:prd:gtin:bv"
+      ],
+      "constraint_expr": "min=1;required=ProductKeyType,ProductKeyMode"
+    }
+  ]
+}

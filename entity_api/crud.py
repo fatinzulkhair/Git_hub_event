@@ -4,7 +4,7 @@ CRUD / BUSINESS LOGIC LAYER
 =====================================================
 All read/write operations on the record tables, plus the logic for
 processing a payload, live here. Endpoints (routers) only call these
-functions and never touch sqlite3 directly.
+functions and never open a database connection themselves.
 
 Entities and locations are handled by one code path: each is a record
 identified by (systemCode, businessEntityCode), stored as "every posting" +
@@ -26,6 +26,7 @@ from .database import (
     query_rows,
 )
 from .hashing import generate_entity_hash
+from .sql_server import upsert, utc_now
 from .validation_engine.loader import insert_validation_results, load_ruleset
 from .validation_engine.rule_engine import run_all_rules
 from .validation_engine.values import CaseInsensitiveRecord
@@ -39,43 +40,31 @@ from .validation_logger import write_failure_log
 def store_posting(spec: PairTables, record: dict, conn) -> dict:
     """Append `record` to spec.history and insert-or-replace it in spec.latest.
 
-    `record` is keyed by spec.columns. Returns the new history row's id and
-    whether the record was new to spec.latest (False = it replaced a row).
+    `record` is keyed by spec.column_names. Returns the new history row's id
+    and whether the record was new to spec.latest (False = it replaced a row).
     """
     entity_hash = generate_entity_hash(record)
-    values = (entity_hash,) + tuple(record.get(column) for column in spec.columns)
+    row = {
+        "entity_hash": entity_hash,
+        **{column: record.get(column) for column in spec.column_names},
+        "created_at": utc_now(),
+    }
 
-    columns = ", ".join(spec.write_columns)
-    placeholders = ", ".join("?" * len(spec.write_columns))
+    history_id = conn.execute(
+        f"INSERT INTO {spec.history} ({', '.join(row)}) OUTPUT INSERTED.id "
+        f"VALUES ({', '.join('?' * len(row))})",
+        list(row.values()),
+    ).fetchone()[0]
 
-    cursor = conn.execute(
-        f"INSERT INTO {spec.history} ({columns}) VALUES ({placeholders})", values
-    )
-    history_id = cursor.lastrowid
-
-    # The write lock is already held (history insert above), so this
-    # check-then-write cannot race another request.
-    existing = conn.execute(
-        f"SELECT id FROM {spec.latest} WHERE entity_hash = ?", (entity_hash,)
-    ).fetchone()
-
-    if existing:
-        assignments = ", ".join(f"{c} = ?" for c in spec.columns)
-        conn.execute(
-            f"UPDATE {spec.latest} SET {assignments}, created_at = CURRENT_TIMESTAMP "
-            "WHERE id = ?",
-            values[1:] + (existing[0],),
-        )
-    else:
-        conn.execute(
-            f"INSERT INTO {spec.latest} ({columns}) VALUES ({placeholders})", values
-        )
+    # Replace the latest row of this record, or create it. upsert() locks the
+    # key, so two requests posting the same new record cannot both insert it.
+    is_new = upsert(conn, spec.latest, ("entity_hash",), row)
 
     return {
         "entity_hash": entity_hash,
         "status": "inserted",
         "history_id": history_id,
-        "is_new": not existing,
+        "is_new": is_new,
         "systemCode": record.get("systemCode"),
         "businessEntityCode": record.get("businessEntityCode"),
     }
@@ -89,7 +78,7 @@ def latest_posting(spec: PairTables, entity_hash: str, conn=None) -> dict:
     """The newest posting of one record, or None. Read from the history table
     so the caller also gets the posting's id; its data matches spec.latest."""
     return query_one(
-        f"SELECT * FROM {spec.history} WHERE entity_hash = ? ORDER BY id DESC LIMIT 1",
+        f"SELECT TOP 1 * FROM {spec.history} WHERE entity_hash = ? ORDER BY id DESC",
         (entity_hash,),
         conn=conn,
     )
@@ -108,7 +97,7 @@ def _fields_of(spec: PairTables, row: dict) -> dict:
             payload = {}
         if payload:
             return payload
-    return {column: row.get(column) for column in spec.columns}
+    return {column: row.get(column) for column in spec.column_names}
 
 
 # ---------------------------------------------------
@@ -237,7 +226,10 @@ def _process_postings(spec: PairTables, payloads: list, to_record, source: str) 
                     },
                 }))
 
-        insert_validation_results(result_rows, conn=conn)
+        record_codes = {
+            r["entity_hash"]: (r["systemCode"], r["businessEntityCode"]) for r in results
+        }
+        insert_validation_results(result_rows, record_codes, conn=conn)
 
     # Committed: now one log file per failed record (see validation_logger).
     for detail, log in pending_logs:
@@ -297,23 +289,32 @@ def insert_responsible_contacts(contacts: list) -> dict:
                 row["person_name"],
                 row["contact"],
             )
-            cursor = conn.execute(
+            # Insert unless the same four values are there already. The lock
+            # hint holds that check until commit, so a parallel request
+            # cannot insert the same row in between.
+            new_row = conn.execute(
                 """
-                INSERT OR IGNORE INTO responsible_contact
+                INSERT INTO entities_responsible_contact
                 (related_field, related_field_name, person_name, contact)
-                VALUES (?, ?, ?, ?)
+                OUTPUT INSERTED.id
+                SELECT ?, ?, ?, ?
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM entities_responsible_contact WITH (UPDLOCK, HOLDLOCK)
+                    WHERE related_field = ? AND related_field_name = ?
+                      AND person_name = ? AND contact = ?
+                )
                 """,
-                values,
-            )
+                values + values,
+            ).fetchone()
 
-            if cursor.rowcount == 1:
-                status, row_id = "inserted", cursor.lastrowid
+            if new_row:
+                status, row_id = "inserted", new_row[0]
                 inserted += 1
             else:
                 status = "skipped"
                 row_id = conn.execute(
                     """
-                    SELECT id FROM responsible_contact
+                    SELECT id FROM entities_responsible_contact
                     WHERE related_field = ? AND related_field_name = ?
                       AND person_name = ? AND contact = ?
                     """,
@@ -332,13 +333,14 @@ def insert_responsible_contacts(contacts: list) -> dict:
 
 def responsible_contacts_for(system_code, country, conn=None) -> list:
     """Who to contact about one record: the contacts for its system and for
-    its country (the location's country). Names match case-insensitively."""
+    its country (the location's country). Names match case-insensitively
+    (the column's collation)."""
     return query_rows(
         """
         SELECT related_field, related_field_name, person_name, contact
-        FROM responsible_contact
-        WHERE (related_field = 'system'  AND related_field_name = ? COLLATE NOCASE)
-           OR (related_field = 'country' AND related_field_name = ? COLLATE NOCASE)
+        FROM entities_responsible_contact
+        WHERE (related_field = 'system'  AND related_field_name = ?)
+           OR (related_field = 'country' AND related_field_name = ?)
         ORDER BY id
         """,
         (system_code, country),
@@ -362,18 +364,18 @@ def get_all_entities() -> pd.DataFrame:
 
 def get_all_historical_entities() -> pd.DataFrame:
     """`historical_entities`: every entity posting. Its id is the entity_id
-    used in validation_results."""
+    used in entities_validation_results."""
     return _list_table(ENTITIES, ENTITIES.history)
 
 
 def get_all_locations() -> pd.DataFrame:
-    """`location`: the newest posting per (systemCode, businessEntityCode)."""
+    """`entities_location`: the newest posting per (systemCode, businessEntityCode)."""
     return _list_table(LOCATIONS, LOCATIONS.latest)
 
 
 def get_all_historical_locations() -> pd.DataFrame:
-    """`historical_location`: every location posting. Its id is the
-    location_id used in validation_results."""
+    """`entities_historical_location`: every location posting. Its id is the
+    location_id used in entities_validation_results."""
     return _list_table(LOCATIONS, LOCATIONS.history)
 
 
@@ -419,7 +421,7 @@ def get_all_responsible_contacts() -> pd.DataFrame:
         """
         SELECT id, related_field, related_field_name, person_name,
                contact, created_at
-        FROM responsible_contact
+        FROM entities_responsible_contact
         ORDER BY id
         """
     )
@@ -433,33 +435,33 @@ def find_entity_by_code(business_entity_code: str) -> pd.DataFrame:
 
 
 def get_latest_validation() -> pd.DataFrame:
-    """`latest_validation_rules`: the most recent run per record and rule,
+    """`entities_latest_validation_rules`: the most recent run per record and rule,
     whether that run came from posting the entity or the location."""
     return query_df(
         """
         SELECT entity_hash, systemCode, businessEntityCode, rule_id, source,
                passed, severity, status, description, validated_at
-        FROM latest_validation_rules
+        FROM entities_latest_validation_rules
         ORDER BY systemCode, businessEntityCode, rule_id
         """
     )
 
 
 def get_validation_summary() -> pd.DataFrame:
-    """`validation_summary`: one row per record — how many rules ran, how many
+    """`entities_validation_summary`: one row per record — how many rules ran, how many
     failed, and which ones."""
     return query_df(
         """
         SELECT entity_hash, systemCode, businessEntityCode, rules_run,
                rules_failed, failed_rules, validated_at
-        FROM validation_summary
+        FROM entities_validation_summary
         ORDER BY rules_failed DESC, systemCode, businessEntityCode
         """
     )
 
 
 def get_dynamic_validation() -> pd.DataFrame:
-    """Results from the table-driven rule engine (validation_results), one row
+    """Results from the table-driven rule engine (entities_validation_results), one row
     per (record, rule). systemCode / businessEntityCode come from whichever
     side of the join exists."""
     return query_df(
@@ -477,7 +479,7 @@ def get_dynamic_validation() -> pd.DataFrame:
             vr.status,
             vr.description,
             vr.created_at
-        FROM validation_results AS vr
+        FROM entities_validation_results AS vr
         LEFT JOIN {ENTITIES.history}  AS e ON e.id = vr.entity_id
         LEFT JOIN {LOCATIONS.history} AS l ON l.id = vr.location_id
         ORDER BY vr.id

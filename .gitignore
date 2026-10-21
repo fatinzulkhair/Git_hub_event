@@ -18,3 +18,6 @@ entity_database.db
 # Failed-validation log files (written by the APIs)
 entities_validation_logs/
 product_validation_logs/
+
+# SQL Server credentials (copy server_testing/config.example.json)
+server_testing/config.json

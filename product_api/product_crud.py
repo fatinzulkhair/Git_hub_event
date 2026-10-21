@@ -4,8 +4,8 @@ CRUD / BUSINESS LOGIC LAYER
 =====================================================
 All read/write operations on the product tables, plus the logic for
 processing a payload, live here. Endpoints (routers) and the bulk loader
-(product_load_data.py) only call these functions and never touch sqlite3
-directly.
+(product_load_data.py) only call these functions and never open a database
+connection themselves.
 
 Processing a payload is two steps:
   1. product_parser.parse_products()   the whole payload, no database yet
@@ -30,6 +30,7 @@ from .product_database import (
     query_rows,
 )
 from .product_parser import ProductNode, parse_products, product_rule_fields
+from .product_sql_server import execute_many, upsert, utc_now
 from .product_validation_engine.product_loader import (
     insert_product_validation_results,
     load_product_ruleset,
@@ -49,36 +50,23 @@ def store_product(node: ProductNode, conn) -> dict:
     Returns the new history row's id and whether the product was new to
     product_latest (False = it replaced a row).
     """
-    spec = PRODUCTS
-    values = (node.product_hash,) + tuple(node.record.get(c) for c in spec.column_names)
+    row = {
+        "product_hash": node.product_hash,
+        **{column: node.record.get(column) for column in PRODUCTS.column_names},
+        "created_at": utc_now(),
+    }
 
-    columns = ", ".join(spec.write_columns)
-    placeholders = ", ".join("?" * len(spec.write_columns))
+    history_id = conn.execute(
+        f"INSERT INTO {PRODUCTS.history} ({', '.join(row)}) OUTPUT INSERTED.id "
+        f"VALUES ({', '.join('?' * len(row))})",
+        list(row.values()),
+    ).fetchone()[0]
 
-    cursor = conn.execute(
-        f"INSERT INTO {spec.history} ({columns}) VALUES ({placeholders})", values
-    )
-    history_id = cursor.lastrowid
+    # Replace the latest row of this product, or create it. upsert() locks the
+    # key, so two requests posting the same new product cannot both insert it.
+    is_new = upsert(conn, PRODUCTS.latest, ("product_hash",), row)
 
-    # The write lock is already held (history insert above), so this
-    # check-then-write cannot race another request.
-    existing = conn.execute(
-        f"SELECT id FROM {spec.latest} WHERE product_hash = ?", (node.product_hash,)
-    ).fetchone()
-
-    if existing:
-        assignments = ", ".join(f"{c} = ?" for c in spec.column_names)
-        conn.execute(
-            f"UPDATE {spec.latest} SET {assignments}, created_at = CURRENT_TIMESTAMP "
-            "WHERE id = ?",
-            values[1:] + (existing[0],),
-        )
-    else:
-        conn.execute(
-            f"INSERT INTO {spec.latest} ({columns}) VALUES ({placeholders})", values
-        )
-
-    return {"history_id": history_id, "is_new": existing is None}
+    return {"history_id": history_id, "is_new": is_new}
 
 
 def _replace_detail_rows(nodes_by_hash: dict, conn) -> None:
@@ -87,22 +75,25 @@ def _replace_detail_rows(nodes_by_hash: dict, conn) -> None:
     batches in total, however many products the payload holds."""
     hashes = [(product_hash,) for product_hash in nodes_by_hash]
     for table in PRODUCT_DETAIL_TABLES:
-        conn.executemany(f"DELETE FROM {table} WHERE product_hash = ?", hashes)
+        execute_many(conn, f"DELETE FROM {table} WHERE product_hash = ?", hashes)
 
     nodes = nodes_by_hash.items()
-    conn.executemany(
+    execute_many(
+        conn,
         "INSERT INTO product_alternate_key "
         "(product_hash, product_key, product_key_type, product_key_mode) "
         "VALUES (?, ?, ?, ?)",
         [(h, *row) for h, node in nodes for row in node.alternate_keys],
     )
-    conn.executemany(
+    execute_many(
+        conn,
         "INSERT INTO product_unit "
         "(product_hash, unit_type_name, quantity, base_unit) "
         "VALUES (?, ?, ?, ?)",
         [(h, *row) for h, node in nodes for row in node.units],
     )
-    conn.executemany(
+    execute_many(
+        conn,
         "INSERT INTO product_property "
         "(product_hash, property_group, name, value) "
         "VALUES (?, ?, ?, ?)",
@@ -127,6 +118,14 @@ def process_products(payload, source: str = "payload") -> dict:
 # What a failed-validation log says about the product it is for.
 _LOG_PRODUCT_COLUMNS = ("primary_product_key", "product_code", "product_type",
                         "level", "parent_product_key", "description")
+
+
+def _contacts_for(product_code, cache: dict, conn) -> list:
+    """product_responsible_contacts_for, asked once per product_code: every
+    level of a hierarchy shares its code."""
+    if product_code not in cache:
+        cache[product_code] = product_responsible_contacts_for(product_code, conn=conn)
+    return cache[product_code]
 
 
 def _failed_outcomes(outcomes: list) -> list:
@@ -156,6 +155,7 @@ def store_and_validate_products(nodes: list) -> dict:
         result_rows = []
         latest = {}  # product_hash -> node; a product posted twice: last one wins
         pending_logs = []  # (detail, log) for each product that failed a rule
+        contacts = {}      # product_code -> its contacts: one query per code
 
         for node in nodes:
             stored = store_product(node, conn)
@@ -192,14 +192,13 @@ def store_and_validate_products(nodes: list) -> dict:
                         column: node.record[column]
                         for column in _LOG_PRODUCT_COLUMNS
                     },
-                    "contacts": product_responsible_contacts_for(
-                        node.record["product_code"], conn=conn
-                    ),
+                    "contacts": _contacts_for(node.record["product_code"], contacts, conn),
                     "run": {"product_id": stored["history_id"], "errors": errors},
                 }))
 
         _replace_detail_rows(latest, conn)
-        insert_product_validation_results(result_rows, conn=conn)
+        product_keys = {h: node.record["primary_product_key"] for h, node in latest.items()}
+        insert_product_validation_results(result_rows, product_keys, conn=conn)
 
     # Committed: now one log file per failed product (see
     # product_validation_logger).
@@ -233,17 +232,25 @@ def insert_product_responsible_contacts(contacts: list) -> dict:
         for contact in contacts:
             row = contact.model_dump()
             values = (row["product_code"], row["person_name"], row["contact"])
-            cursor = conn.execute(
+            # Insert unless the same three values are there already. The lock
+            # hint holds that check until commit, so a parallel request
+            # cannot insert the same row in between.
+            new_row = conn.execute(
                 """
-                INSERT OR IGNORE INTO product_responsible_contact
+                INSERT INTO product_responsible_contact
                 (product_code, person_name, contact)
-                VALUES (?, ?, ?)
+                OUTPUT INSERTED.id
+                SELECT ?, ?, ?
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM product_responsible_contact WITH (UPDLOCK, HOLDLOCK)
+                    WHERE product_code = ? AND person_name = ? AND contact = ?
+                )
                 """,
-                values,
-            )
+                values + values,
+            ).fetchone()
 
-            if cursor.rowcount == 1:
-                status, row_id = "inserted", cursor.lastrowid
+            if new_row:
+                status, row_id = "inserted", new_row[0]
                 inserted += 1
             else:
                 status = "skipped"
@@ -283,7 +290,7 @@ def get_all_product_responsible_contacts() -> pd.DataFrame:
 
 def product_responsible_contacts_for(product_code, conn=None) -> list:
     """Who to contact about one product: the contacts for its product_code
-    (matched case-insensitively — see the table's COLLATE NOCASE)."""
+    (matched case-insensitively — see the column's collation)."""
     return query_rows(
         """
         SELECT person_name, contact

@@ -1,0 +1,22 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-E-UNITS-MANDATORY",
+      "validation_type": "Product Master Data - Units",
+      "description": "Every product has at least one Unit, and every Unit has UnitTypeName, Quantity and BaseUnit, not empty",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Units are incomplete"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-E-UNITS-MANDATORY",
+      "role": "Target",
+      "field_name": "Units[]",
+      "data_type": "ListEntries",
+      "constraint_expr": "min=1;required=UnitTypeName,Quantity,BaseUnit"
+    }
+  ]
+}

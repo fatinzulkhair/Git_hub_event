@@ -61,7 +61,7 @@ async def process_json_body(payload: Dict[str, Any] = Body(...)):
         "mappingsInformation": [ { ... }, { ... } ]
     }
 
-    Each entity is stored and validated against its matching `location` row.
+    Each entity is stored and validated against its matching `entities_location` row.
     An entity with no location yet is reported by the JOIN-COMPLETENESS rule.
     """
     if "mappingsInformation" in payload or "systemCode" in payload:
@@ -131,7 +131,7 @@ def list_locations():
 
 @router.get(
     "/locations/historical",
-    summary="Display every posted location (historical_location)",
+    summary="Display every posted location (entities_historical_location)",
 )
 def list_historical_locations():
     return _table(crud.get_all_historical_locations())

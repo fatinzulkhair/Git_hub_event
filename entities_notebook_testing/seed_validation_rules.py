@@ -1,15 +1,16 @@
 """
-Run once (or after wiping the val_* tables) to load the example
+Run once (or after wiping the entities_val_* tables) to load the example
 rule set from validation_documentation.md into the database:
 
     python entities_notebook_testing/seed_validation_rules.py
 
 Works from any folder: the project root is put on the import path, and the
-database path comes from entity_api/config.py (always the project root).
+database comes from server_testing/config.json (see entity_api/sql_server.py).
 
-Safe to re-run: uses INSERT OR REPLACE keyed on the natural ids
-(rule_id / check_id / logic_id), and clears val_rule_conditions
-first since it has no natural key of its own.
+The rows below are saved exactly as a POST /validation-rules body would be
+(rule_authoring.save_validation_rules), so the seed and the API write the
+tables the same way. Safe to re-run: rules, checks and logic are upserted by
+their id, and a seeded rule's conditions are replaced as a set.
 """
 
 import os
@@ -19,7 +20,8 @@ import sys
 # project root that holds the entity_api package.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from entity_api.database import get_connection, initialize_database  # noqa: E402
+from entity_api.database import initialize_database  # noqa: E402
+from entity_api.rule_authoring import parse_rules_payload, save_validation_rules  # noqa: E402
 
 RULES = [
     # rule_id, validation_type, function_name, check_id, description, severity, active, on_exception_status, on_exception_description
@@ -171,61 +173,17 @@ LOGIC = [
 
 def seed():
     initialize_database()
-    conn = get_connection()
-    try:
-        cursor = conn.cursor()
-
-        cursor.executemany(
-            """
-            INSERT OR REPLACE INTO val_rules
-            (rule_id, validation_type, function_name, check_id, description,
-             severity, active, on_exception_status, on_exception_description)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            RULES,
-        )
-
-        rule_ids = [r[0] for r in RULES]
-        cursor.executemany(
-            "DELETE FROM val_rule_conditions WHERE rule_id = ?",
-            [(rid,) for rid in rule_ids],
-        )
-        cursor.executemany(
-            """
-            INSERT INTO val_rule_conditions
-            (rule_id, role, field_name, operator, expected_value, data_type,
-             constraint_expr, reference_source, logical_group)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            CONDITIONS,
-        )
-
-        cursor.executemany(
-            """
-            INSERT OR REPLACE INTO val_checks
-            (check_id, check_type, field_names, check_value, expected_value,
-             reference_source, field_combine)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            CHECKS,
-        )
-
-        cursor.executemany(
-            """
-            INSERT OR REPLACE INTO val_logic
-            (logic_id, if_check_id, then_check_id, else_check_id)
-            VALUES (?, ?, ?, ?)
-            """,
-            LOGIC,
-        )
-
-        conn.commit()
-        print(
-            f"Seeded {len(RULES)} rules, {len(CONDITIONS)} conditions, "
-            f"{len(CHECKS)} checks, {len(LOGIC)} logic rows."
-        )
-    finally:
-        conn.close()
+    summary = save_validation_rules(parse_rules_payload(
+        {"rules": RULES, "conditions": CONDITIONS, "checks": CHECKS, "logic": LOGIC}
+    ))
+    print(
+        f"Seeded {len(summary['rules_written'])} rules, "
+        f"{summary['conditions_written']} conditions, "
+        f"{len(summary['checks_written'])} checks, "
+        f"{len(summary['logic_written'])} logic rows."
+    )
+    for warning in summary["warnings"]:
+        print("  warning:", warning)
 
 
 if __name__ == "__main__":

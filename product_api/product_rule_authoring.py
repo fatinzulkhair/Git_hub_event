@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from .product_database import connect, query_rows
+from .product_sql_server import execute_many, upsert
 
 # ---------------------------------------------------------------------------
 # Column order for each table — used to expand positional arrays like
@@ -389,7 +390,7 @@ def _gen_id(kind: str) -> str:
 
 
 def save_product_validation_rules(payload: ProductValidationRulesPayload) -> dict:
-    """Write the parsed payload into the val_* tables. Returns a summary."""
+    """Write the parsed payload into the product_val_* tables. Returns a summary."""
     checks: Dict[str, ProductCheckIn] = {}
     logic: Dict[str, ProductLogicIn] = {}
     rules: List[Dict[str, Any]] = []
@@ -509,63 +510,35 @@ def save_product_validation_rules(payload: ProductValidationRulesPayload) -> dic
 
 
 def _write(rules, conditions, checks, logic) -> None:
+    """Upsert checks / logic / rules by their id; a rule's conditions are
+    replaced as a set (they have no natural key). One transaction."""
     with connect() as conn:
-        cur = conn.cursor()
+        for cid, check in checks.items():
+            row = check.model_dump()
+            upsert(conn, "product_val_checks", ("check_id",),
+                   {"check_id": cid, **{c: row[c] for c in PRODUCT_CHECK_COLUMNS[1:]}})
 
-        if checks:
-            cur.executemany(
-                """
-                INSERT OR REPLACE INTO product_val_checks
-                (check_id, check_type, field_names, check_value, expected_value,
-                 reference_source, field_combine)
-                VALUES (:cid, :check_type, :field_names, :check_value,
-                        :expected_value, :reference_source, :field_combine)
-                """,
-                [{"cid": cid, **c.model_dump(exclude={"check_id"})}
-                 for cid, c in checks.items()],
-            )
+        for lid, entry in logic.items():
+            row = entry.model_dump()
+            upsert(conn, "product_val_logic", ("logic_id",),
+                   {"logic_id": lid, **{c: row[c] for c in PRODUCT_LOGIC_COLUMNS[1:]}})
 
-        if logic:
-            cur.executemany(
-                """
-                INSERT OR REPLACE INTO product_val_logic
-                (logic_id, if_check_id, then_check_id, else_check_id)
-                VALUES (:lid, :if_check_id, :then_check_id, :else_check_id)
-                """,
-                [{"lid": lid, **row.model_dump(exclude={"logic_id"})}
-                 for lid, row in logic.items()],
-            )
-
-        if rules:
-            cur.executemany(
-                """
-                INSERT OR REPLACE INTO product_val_rules
-                (rule_id, validation_type, function_name, check_id, description,
-                 severity, active, on_exception_status, on_exception_description)
-                VALUES (:rule_id, :validation_type, :function_name, :check_id,
-                        :description, :severity, :active, :on_exception_status,
-                        :on_exception_description)
-                """,
-                rules,
-            )
+        for rule in rules:
+            upsert(conn, "product_val_rules", ("rule_id",),
+                   {c: rule[c] for c in PRODUCT_RULE_COLUMNS})
 
         if conditions:
-            # conditions have no natural key: replace the whole set per rule_id
             touched = sorted({c["rule_id"] for c in conditions})
-            cur.executemany(
+            execute_many(
+                conn,
                 "DELETE FROM product_val_rule_conditions WHERE rule_id = ?",
                 [(rid,) for rid in touched],
             )
-            cur.executemany(
-                """
-                INSERT INTO product_val_rule_conditions
-                (rule_id, role, field_name, operator, expected_value, data_type,
-                 constraint_expr, reference_source, logical_group)
-                VALUES (:rule_id, :role, :field_name, :operator, :expected_value,
-                        :data_type, :constraint_expr, :reference_source,
-                        :logical_group)
-                """,
-                conditions,
+            execute_many(
+                conn,
+                f"INSERT INTO product_val_rule_conditions ({', '.join(PRODUCT_CONDITION_COLUMNS)}) "
+                f"VALUES ({', '.join('?' * len(PRODUCT_CONDITION_COLUMNS))})",
+                [tuple(c[column] for column in PRODUCT_CONDITION_COLUMNS) for c in conditions],
             )
 
 

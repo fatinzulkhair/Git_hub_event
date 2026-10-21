@@ -49,13 +49,14 @@ class ProductResponsibleContactIn(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
+    # max_length: the column sizes (a longer value is a 422, not a database error)
     product_code: str = Field(
-        min_length=1,
+        min_length=1, max_length=200,
         validation_alias=AliasChoices("product_code", "productCode"))
     person_name: str = Field(
-        min_length=1,
+        min_length=1, max_length=200,
         validation_alias=AliasChoices("person_name", "personName"))
-    contact: str = Field(min_length=1)
+    contact: str = Field(min_length=1, max_length=400)
 
     @field_validator("product_code", "person_name", "contact", mode="before")
     @classmethod

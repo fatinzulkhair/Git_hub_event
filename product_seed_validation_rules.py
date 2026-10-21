@@ -1,17 +1,25 @@
 """
-Run once (or after wiping the product_val_* tables) to load the example
-product rule set into the database:
+Load product validation rules into the database:
 
-    python product_seed_validation_rules.py
+    python product_seed_validation_rules.py                            # the examples below
+    python product_seed_validation_rules.py product_validation_rules   # every *.json in a folder
+    python product_seed_validation_rules.py a.json b.json              # just these files
+
+Each JSON file is one POST /product-validation-rules body (e.g. the rules
+A-E in product_validation_rules/, one rule per file).
 
 Safe to re-run: the rules are saved by the same code as
-POST /product-validation-rules, which does INSERT OR REPLACE keyed on
+POST /product-validation-rules, which upserts rules / checks / logic by
 rule_id / check_id / logic_id and replaces each rule's conditions as a set.
 PRODUCT_RULES_PAYLOAD below is therefore also a valid body for that endpoint.
 
 Field names are paths into the product JSON (e.g. "ProductType.Name"); see
 GET /products/lookup -> rule_fields for every path a stored product has.
 """
+
+import json
+import sys
+from pathlib import Path
 
 from product_api.product_database import initialize_product_database
 from product_api.product_rule_authoring import (
@@ -165,20 +173,38 @@ PRODUCT_RULES_PAYLOAD = {
 }
 
 
-def seed():
-    initialize_product_database()
-    summary = save_product_validation_rules(
-        parse_product_rules_payload(PRODUCT_RULES_PAYLOAD)
-    )
+def rule_files(args: list) -> list:
+    """The .json files named on the command line: files, or folders whose
+    *.json are taken."""
+    files = []
+    for target in map(Path, args):
+        files.extend(sorted(target.glob("*.json")) if target.is_dir() else [target])
+    return files
+
+
+def save(payload, label: str) -> None:
+    summary = save_product_validation_rules(parse_product_rules_payload(payload))
     print(
-        f"Seeded {len(summary['rules_written'])} rules, "
+        f"{label}: {len(summary['rules_written'])} rules, "
         f"{summary['conditions_written']} conditions, "
         f"{len(summary['checks_written'])} checks, "
-        f"{len(summary['logic_written'])} logic rows."
+        f"{len(summary['logic_written'])} logic rows"
     )
     for warning in summary["warnings"]:
-        print("warning:", warning)
+        print("  warning:", warning)
+
+
+def seed(args: list) -> None:
+    initialize_product_database()
+    if not args:
+        save(PRODUCT_RULES_PAYLOAD, "Seeded the examples")
+        return
+    files = rule_files(args)
+    if not files:
+        sys.exit("No .json rule files found.")
+    for path in files:
+        save(json.loads(path.read_bytes()), str(path))
 
 
 if __name__ == "__main__":
-    seed()
+    seed(sys.argv[1:])

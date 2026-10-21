@@ -4,7 +4,7 @@ product_validation_engine: /product_loader.py
 =====================================================
 Reads the table-driven rule definitions (product_val_rules,
 product_val_rule_conditions, product_val_checks, product_val_logic) out of
-SQLite, and writes results back.
+the database, and writes results back.
 
 The four tables are read together into a ProductRuleSet — one connection,
 four queries, per payload — and the engine then resolves Check/Logic ids
@@ -16,7 +16,10 @@ next payload without a restart.
 from dataclasses import dataclass, field
 from typing import Optional
 
-from ..product_database import connect, query_rows, refresh_product_validation_tables
+from ..product_database import connect, query_rows
+from ..product_sql_server import execute_many, utc_now
+
+DESCRIPTION_LIMIT = 4000  # the description columns are NVARCHAR(4000)
 
 
 @dataclass
@@ -45,7 +48,7 @@ def load_product_ruleset(conn=None) -> ProductRuleSet:
     )
 
     conditions: dict = {}
-    for row in query_rows("SELECT * FROM product_val_rule_conditions", conn=conn):
+    for row in query_rows("SELECT * FROM product_val_rule_conditions ORDER BY id", conn=conn):
         conditions.setdefault(row.get("rule_id"), []).append(row)
 
     return ProductRuleSet(
@@ -56,30 +59,87 @@ def load_product_ruleset(conn=None) -> ProductRuleSet:
     )
 
 
-def insert_product_validation_results(rows: list, conn=None) -> None:
+def insert_product_validation_results(rows: list, product_keys: dict, conn=None) -> None:
     """Write one batch of (product, rule) outcomes.
 
     `rows` are (product_hash, product_id, rule_id, passed, severity, status,
-    description) tuples — see product_rule_engine.run_all_product_rules.
+    description) tuples, in the order they were evaluated — see
+    product_rule_engine.run_all_product_rules. `product_keys` maps each
+    product_hash to its PrimaryProductKey.
 
-    The full history goes to product_validation_results;
-    product_latest_validation_rules and product_validation_summary are then
-    re-derived for the products this batch touched, in the same transaction.
+    The full history goes to product_validation_results. The two derived
+    tables are then rebuilt for the products in this batch, in the same
+    transaction, so they hold exactly this run:
+      product_latest_validation_rules  one row per product and rule
+      product_validation_summary       one row per product
+    A product posted twice in one batch keeps its last outcome.
     """
-    rows = list(rows)
+    rows = [row[:6] + (_clip(row[6]),) for row in rows]
     if not rows:
         return
+    validated_at = utc_now()
+
+    latest = {}  # (product_hash, rule_id) -> row; later rows replace earlier ones
+    for row in rows:
+        latest[(row[0], row[2])] = row
+    hashes = sorted({product_hash for product_hash, _rule_id in latest})
+
+    summary = {}  # product_hash -> [rules run, failed rule_ids]
+    for (product_hash, rule_id), row in sorted(latest.items()):
+        counts = summary.setdefault(product_hash, [0, []])
+        counts[0] += 1
+        if not row[3]:
+            counts[1].append(rule_id)
 
     with connect(conn) as active:
-        since_id = active.execute(
-            "SELECT COALESCE(MAX(id), 0) FROM product_validation_results"
-        ).fetchone()[0]
-        active.executemany(
+        execute_many(
+            active,
             """
             INSERT INTO product_validation_results
-            (product_hash, product_id, rule_id, passed, severity, status, description)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (product_hash, product_id, rule_id, passed, severity, status,
+             description, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            [row + (validated_at,) for row in rows],
         )
-        refresh_product_validation_tables(active, since_id=since_id)
+
+        for table in ("product_latest_validation_rules", "product_validation_summary"):
+            execute_many(active, f"DELETE FROM {table} WHERE product_hash = ?",
+                         [(product_hash,) for product_hash in hashes])
+
+        execute_many(
+            active,
+            """
+            INSERT INTO product_latest_validation_rules
+            (product_hash, primary_product_key, rule_id, passed, severity,
+             status, description, validated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (product_hash, product_keys.get(product_hash), rule_id, passed,
+                 severity, status, description, validated_at)
+                for (product_hash, rule_id), (_h, _id, _r, passed, severity, status,
+                                              description) in latest.items()
+            ],
+        )
+        execute_many(
+            active,
+            """
+            INSERT INTO product_validation_summary
+            (product_hash, primary_product_key, rules_run, rules_failed,
+             failed_rules, validated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (product_hash, product_keys.get(product_hash), rules_run, len(failed),
+                 _clip(", ".join(failed)) or None, validated_at)
+                for product_hash, (rules_run, failed) in summary.items()
+            ],
+        )
+
+
+def _clip(text):
+    """Text cut to fit an NVARCHAR(4000) column."""
+    if text is None or len(text) <= DESCRIPTION_LIMIT:
+        return text
+    return text[:DESCRIPTION_LIMIT - 3] + "..."

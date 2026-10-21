@@ -7,8 +7,8 @@ This is the piece that lets Tabel B (Logic) chain into itself, as
 or in a Rule's Check ID column, can be:
 
   - the literal string "True" / "False"
-  - a Check ID (found in val_checks)          -> evaluate_check
-  - a Logic ID (found in val_logic)            -> evaluate_logic (recurses)
+  - a Check ID (found in entities_val_checks)          -> evaluate_check
+  - a Logic ID (found in entities_val_logic)            -> evaluate_logic (recurses)
 
 resolve() figures out which one it is and dispatches. Lookups hit the
 payload's in-memory RuleSet, so chaining costs nothing at the database.

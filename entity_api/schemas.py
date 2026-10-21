@@ -54,7 +54,7 @@ class EntityRecord(BaseModel):
 
 
 class ResponsibleContactIn(BaseModel):
-    """One row of the responsible_contact table.
+    """One row of the entities_responsible_contact table.
 
     related_field says what related_field_name refers to: a 'system' or a
     'country'. contact is free text — an email address or a Teams account.
@@ -65,13 +65,14 @@ class ResponsibleContactIn(BaseModel):
 
     related_field: Literal["system", "country"] = Field(
         validation_alias=AliasChoices("related_field", "relatedField"))
+    # max_length: the column sizes (a longer value is a 422, not a database error)
     related_field_name: str = Field(
-        min_length=1,
+        min_length=1, max_length=200,
         validation_alias=AliasChoices("related_field_name", "relatedFieldName"))
     person_name: str = Field(
-        min_length=1,
+        min_length=1, max_length=200,
         validation_alias=AliasChoices("person_name", "personName"))
-    contact: str = Field(min_length=1)
+    contact: str = Field(min_length=1, max_length=400)
 
     @field_validator("related_field", mode="before")
     @classmethod

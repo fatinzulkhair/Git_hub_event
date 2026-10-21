@@ -44,7 +44,7 @@ def write_failure_log(entity_hash: str, record: dict, contacts: list,
     that record, creating the file if needed.
 
     record    which record it is: systemCode, businessEntityCode, country
-    contacts  the responsible_contact rows for its system and country
+    contacts  the entities_responsible_contact rows for its system and country
     run       this run: source, entity_id, location_id and `errors`, the
               outcome of every rule that failed
 

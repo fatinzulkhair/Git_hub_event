@@ -1,0 +1,31 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-C-TPM-GTIN-MSKU-TWICE",
+      "validation_type": "Product Master Data - TPM product keys",
+      "description": "When ProductProperties.TpmProduct is True, exactly two AlternateProductKeys start with urn:inexto:id:prd:gtin:msku, each with ProductKeyType and ProductKeyMode",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "TPM product needs its gtin:msku alternate product key exactly twice"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-C-TPM-GTIN-MSKU-TWICE",
+      "role": "Trigger",
+      "field_name": "ProductProperties.TpmProduct",
+      "operator": "equals",
+      "expected_value": "True"
+    },
+    {
+      "rule_id": "PRD-C-TPM-GTIN-MSKU-TWICE",
+      "role": "Target",
+      "field_name": "AlternateProductKeys[].ProductKey",
+      "data_type": "ListEntries",
+      "operator": "starts_with",
+      "expected_value": "urn:inexto:id:prd:gtin:msku",
+      "constraint_expr": "count=2;required=ProductKeyType,ProductKeyMode"
+    }
+  ]
+}

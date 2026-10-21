@@ -3,7 +3,7 @@
 validation_engine: /rule_engine.py
 =====================================================
 Entry point for the rule engine: runs every active rule against one record.
-All rule logic is user-defined and lives in the val_* tables — there is no
+All rule logic is user-defined and lives in the entities_val_* tables — there is no
 hardcoded validation left in Python.
 
 A record is the FULL OUTER JOIN of an entity and a location on
@@ -11,12 +11,12 @@ A record is the FULL OUTER JOIN of an entity and a location on
 flat, case-insensitive view of both. On top of the user's rules the engine
 always emits JOIN-COMPLETENESS, which reports a side that isn't there yet.
 
-For each active row in val_rules:
+For each active row in entities_val_rules:
   - if it has a Check ID  -> resolve() it (Check or Logic, and Logic can
     chain into more Logic)
   - otherwise             -> evaluate its Rule Conditions rows
 
-Outcomes are returned as validation_results rows for the caller to write in
+Outcomes are returned as entities_validation_results rows for the caller to write in
 one batch (see crud._process_postings).
 """
 
@@ -25,7 +25,7 @@ from .loader import RuleSet, load_ruleset
 from .resolvers import resolve
 from .values import CaseInsensitiveRecord
 
-# Reserved rule_id for the built-in join check. A val_rules row with this id
+# Reserved rule_id for the built-in join check. An entities_val_rules row with this id
 # is ignored so the built-in stays the single source of the outcome.
 JOIN_RULE_ID = "JOIN-COMPLETENESS"
 JOIN_SEVERITY = "Warning"
@@ -54,7 +54,7 @@ def run_all_rules(record: dict, entity_hash: str, entity_id=None,
     """Run the join check plus every active rule against one joined record.
 
     Returns (results, rows): `results` describes each outcome, `rows` are the
-    validation_results tuples to insert.
+    entities_validation_results tuples to insert.
 
     `ctx` should be the SAME dict across all records in one payload so that
     batch-scoped Unique checks see each other — see crud._process_postings for

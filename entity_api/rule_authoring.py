@@ -8,10 +8,10 @@ rule, a bare list, the seed's {"RULES": [...], "CHECKS": [...]} layout,
 camelCase keys, or positional arrays — it is normalised here and written
 into the same four tables the engine already reads:
 
-    val_rules            (rule_id  PK)
-    val_rule_conditions  (no natural key -> replaced per rule_id)
-    val_checks           (check_id PK)
-    val_logic            (logic_id PK)
+    entities_val_rules            (rule_id  PK)
+    entities_val_rule_conditions  (no natural key -> replaced per rule_id)
+    entities_val_checks           (check_id PK)
+    entities_val_logic            (logic_id PK)
 
 Nothing about the rule engine changes; a rule created here is picked up on
 the very next /entities/process call (loader has no cache).
@@ -25,6 +25,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from .database import connect, query_rows
+from .sql_server import execute_many, upsert
 
 # ---------------------------------------------------------------------------
 # Column order for each table — used to expand positional arrays like
@@ -389,7 +390,7 @@ def _gen_id(kind: str) -> str:
 
 
 def save_validation_rules(payload: ValidationRulesPayload) -> dict:
-    """Write the parsed payload into the val_* tables. Returns a summary."""
+    """Write the parsed payload into the entities_val_* tables. Returns a summary."""
     checks: Dict[str, CheckIn] = {}
     logic: Dict[str, LogicIn] = {}
     rules: List[Dict[str, Any]] = []
@@ -509,63 +510,35 @@ def save_validation_rules(payload: ValidationRulesPayload) -> dict:
 
 
 def _write(rules, conditions, checks, logic) -> None:
+    """Upsert checks / logic / rules by their id; a rule's conditions are
+    replaced as a set (they have no natural key). One transaction."""
     with connect() as conn:
-        cur = conn.cursor()
+        for cid, check in checks.items():
+            row = check.model_dump()
+            upsert(conn, "entities_val_checks", ("check_id",),
+                   {"check_id": cid, **{c: row[c] for c in CHECK_COLUMNS[1:]}})
 
-        if checks:
-            cur.executemany(
-                """
-                INSERT OR REPLACE INTO val_checks
-                (check_id, check_type, field_names, check_value, expected_value,
-                 reference_source, field_combine)
-                VALUES (:cid, :check_type, :field_names, :check_value,
-                        :expected_value, :reference_source, :field_combine)
-                """,
-                [{"cid": cid, **c.model_dump(exclude={"check_id"})}
-                 for cid, c in checks.items()],
-            )
+        for lid, entry in logic.items():
+            row = entry.model_dump()
+            upsert(conn, "entities_val_logic", ("logic_id",),
+                   {"logic_id": lid, **{c: row[c] for c in LOGIC_COLUMNS[1:]}})
 
-        if logic:
-            cur.executemany(
-                """
-                INSERT OR REPLACE INTO val_logic
-                (logic_id, if_check_id, then_check_id, else_check_id)
-                VALUES (:lid, :if_check_id, :then_check_id, :else_check_id)
-                """,
-                [{"lid": lid, **row.model_dump(exclude={"logic_id"})}
-                 for lid, row in logic.items()],
-            )
-
-        if rules:
-            cur.executemany(
-                """
-                INSERT OR REPLACE INTO val_rules
-                (rule_id, validation_type, function_name, check_id, description,
-                 severity, active, on_exception_status, on_exception_description)
-                VALUES (:rule_id, :validation_type, :function_name, :check_id,
-                        :description, :severity, :active, :on_exception_status,
-                        :on_exception_description)
-                """,
-                rules,
-            )
+        for rule in rules:
+            upsert(conn, "entities_val_rules", ("rule_id",),
+                   {c: rule[c] for c in RULE_COLUMNS})
 
         if conditions:
-            # conditions have no natural key: replace the whole set per rule_id
             touched = sorted({c["rule_id"] for c in conditions})
-            cur.executemany(
-                "DELETE FROM val_rule_conditions WHERE rule_id = ?",
+            execute_many(
+                conn,
+                "DELETE FROM entities_val_rule_conditions WHERE rule_id = ?",
                 [(rid,) for rid in touched],
             )
-            cur.executemany(
-                """
-                INSERT INTO val_rule_conditions
-                (rule_id, role, field_name, operator, expected_value, data_type,
-                 constraint_expr, reference_source, logical_group)
-                VALUES (:rule_id, :role, :field_name, :operator, :expected_value,
-                        :data_type, :constraint_expr, :reference_source,
-                        :logical_group)
-                """,
-                conditions,
+            execute_many(
+                conn,
+                f"INSERT INTO entities_val_rule_conditions ({', '.join(CONDITION_COLUMNS)}) "
+                f"VALUES ({', '.join('?' * len(CONDITION_COLUMNS))})",
+                [tuple(c[column] for column in CONDITION_COLUMNS) for c in conditions],
             )
 
 
@@ -574,11 +547,11 @@ def get_all_rule_definitions() -> dict:
     with connect() as conn:
         return {
             "rules": query_rows(
-                "SELECT * FROM val_rules ORDER BY rule_id", conn=conn),
+                "SELECT * FROM entities_val_rules ORDER BY rule_id", conn=conn),
             "conditions": query_rows(
-                "SELECT * FROM val_rule_conditions ORDER BY rule_id, id", conn=conn),
+                "SELECT * FROM entities_val_rule_conditions ORDER BY rule_id, id", conn=conn),
             "checks": query_rows(
-                "SELECT * FROM val_checks ORDER BY check_id", conn=conn),
+                "SELECT * FROM entities_val_checks ORDER BY check_id", conn=conn),
             "logic": query_rows(
-                "SELECT * FROM val_logic ORDER BY logic_id", conn=conn),
+                "SELECT * FROM entities_val_logic ORDER BY logic_id", conn=conn),
         }

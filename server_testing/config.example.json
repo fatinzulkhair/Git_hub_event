@@ -1,0 +1,12 @@
+{
+  "database": {
+    "driver": "ODBC Driver 17 for SQL Server",
+    "server": "your-instance.xxxxxxxx.ap-southeast-1.rds.amazonaws.com,1433",
+    "database": "your_application_database",
+    "username": "your_app_login",
+    "password": "change-me",
+    "schema": "dbo",
+    "encrypt": "yes",
+    "trust_server_certificate": "yes"
+  }
+}

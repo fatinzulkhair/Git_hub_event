@@ -15,7 +15,12 @@ import os
 # An absolute path in an environment variable is used as it is.
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-DB_NAME = os.path.join(PROJECT_ROOT, os.environ.get("ENTITY_DB_NAME", "entity_database.db"))
+# SQL Server (AWS RDS) connection details — see sql_server.py. The product
+# program reads the same file by default: both live in one database.
+DB_CONFIG_PATH = os.path.join(
+    PROJECT_ROOT,
+    os.environ.get("ENTITY_DB_CONFIG", os.path.join("server_testing", "config.json")),
+)
 
 # Where a record that fails validation gets its log file (validation_logger.py).
 ENTITY_LOG_DIR = os.path.join(

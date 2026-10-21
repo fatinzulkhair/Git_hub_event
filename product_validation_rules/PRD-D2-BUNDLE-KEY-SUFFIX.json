@@ -1,0 +1,29 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-D2-BUNDLE-KEY-SUFFIX",
+      "validation_type": "Product Master Data - Primary product key",
+      "description": "A Bundle's PrimaryProductKey ends with .2",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Bundle PrimaryProductKey must end with .2"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-D2-BUNDLE-KEY-SUFFIX",
+      "role": "Trigger",
+      "field_name": "ProductType.Name",
+      "operator": "equals",
+      "expected_value": "Bundle"
+    },
+    {
+      "rule_id": "PRD-D2-BUNDLE-KEY-SUFFIX",
+      "role": "Target",
+      "field_name": "PrimaryProductKey",
+      "data_type": "Regex",
+      "expected_value": "\\.2$"
+    }
+  ]
+}

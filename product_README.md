@@ -12,15 +12,18 @@ SHA256 hash, stored as **every posting + newest posting**, and validated by the 
 ```
 product_run.py                      # Entry point: python product_run.py  (port 8001)
 product_load_data.py                # Bulk loader: every product_data/*.json in one transaction
-product_seed_validation_rules.py    # Loads the example product rules (PRD-*)
+product_seed_validation_rules.py    # Loads the example rules (PRD-*), or rule JSON files / folders
+product_validation_rules/           # Rules A-E: one POST /product-validation-rules body per file
 product_data/                       # Input JSON — one packaging hierarchy per file
+server_testing/config.json          # SQL Server connection, shared with the entity program (not in git)
 product_validation_logs/            # Created on the first failed validation: one log file per failed product
 product_notebook_testing/
 ├── product_test_api.ipynb          # Manual test: contacts, post files, results, log files, reset
 └── product_export_json.ipynb       # Export products back to JSON, one file per product
 product_api/
-├── product_config.py               # DB name, data folder, API title/version
-├── product_database.py             # SQLite connection, schema, derived result tables
+├── product_config.py               # config.json path, data / log folders, API title/version
+├── product_sql_server.py           # The SQL Server connection: config.json, engine, safety checks
+├── product_database.py             # Table definitions (created when missing) and the query helpers
 ├── product_hashing.py              # generate_product_hash()  (SHA256 of PrimaryProductKey)
 ├── product_parser.py               # NEW: product JSON tree -> rows + the rule engine's flat view
 ├── product_schemas.py              # Pydantic models for the POST responses (Swagger)
@@ -43,16 +46,20 @@ product_api/
 ## Running
 
 ```bash
-python product_seed_validation_rules.py   # once: example rules (safe to re-run)
-python product_load_data.py               # bulk-load every product_data/*.json
-python product_run.py                     # API + Swagger at http://localhost:8001/docs
+cp server_testing/config.example.json server_testing/config.json     # once: the RDS details
+python product_seed_validation_rules.py                              # example rules (safe to re-run)
+python product_seed_validation_rules.py product_validation_rules     # rules A-E (safe to re-run)
+python product_load_data.py                                          # bulk-load every product_data/*.json
+python product_run.py                                                # API + Swagger at http://localhost:8001/docs
 ```
 
-The entity API keeps running on port 8000 (`python entities_run.py`); the two programs share
-nothing. The product database is `product_database.db`, which you can change with the
-`PRODUCT_DB_NAME` environment variable. Relative paths (`PRODUCT_DB_NAME`, `PRODUCT_DATA_DIR`,
-`PRODUCT_LOG_DIR`) are resolved against the project root, so every script finds the same files
-whichever folder it is started from.
+The data lives in **SQL Server (AWS RDS)**, in the database named in `server_testing/config.json`
+— the same database and file as the entity API (`python entities_run.py`, port 8000); the two
+programs share no code and no tables. See README.md, *Connecting to SQL Server*, for the
+config keys and for what keeps every write inside that one database (connection checks,
+tables created when missing and never altered). Set `PRODUCT_DB_CONFIG` to use another file.
+Relative paths (`PRODUCT_DB_CONFIG`, `PRODUCT_DATA_DIR`, `PRODUCT_LOG_DIR`) are resolved against
+the project root, so every script finds the same files whichever folder it is started from.
 
 ---
 
@@ -87,15 +94,19 @@ product** (one row each), linked by `parent_product_key` and `level` (0 = top).
 - `product_validation_results`: every outcome. `product_latest_validation_rules` and `product_validation_summary` are derived from it (latest run, and per product).
 - `product_responsible_contact`: who to contact about a product, linked directly to `product_latest.product_code` (see below).
 
-An older `product_database.db` is upgraded on startup: `product_code` is added to
-`product_history` / `product_latest` and filled from `product_definition_key`.
+Column types: `id` is `BIGINT IDENTITY`, hashes `CHAR(64)`, keys and codes `NVARCHAR(450)`,
+other text `NVARCHAR(4000)`, `product_json` `NVARCHAR(MAX)`, `passed` `BIT`, timestamps
+`DATETIME2(0)` in UTC. `product_code` compares case-insensitively.
 
 ### Why ingestion is fast
 
 1. **Parse first, write once.** The whole payload (or, for the loader, every file) is parsed before the database is touched. A bad node rejects everything, and the error says where (`product.json[0].ChildProducts[0].Units: expected a list of objects`).
-2. **One transaction** per payload: a single commit instead of one per row. This is the main cost in SQLite.
+2. **One transaction** per payload: a single commit instead of one per row.
 3. **Rules loaded once** per payload and resolved in memory.
-4. **Batched detail tables**: three `DELETE` and three `INSERT` `executemany` calls per payload, whatever its size.
+4. **Batched writes**: the detail tables and the validation results are written with
+   `executemany` + pyodbc's `fast_executemany`, one round trip per statement whatever the
+   payload size. Each product's own row costs 2-3 short statements (history insert, latest
+   upsert). On a local SQL Server, 600 products store and validate in about 3 seconds.
 5. `product_load_data.py` skips HTTP entirely and loads all files in one transaction.
 
 ---
@@ -145,7 +156,60 @@ You don't need to guess paths: `GET /products/lookup?key=…` returns `rule_fiel
 view the engine evaluates for that product.
 
 `Unique` with `referenceSource: "batch"` is tracked **per rule**, so two rules on the same field do
-not flag each other. The database form needs a real column, e.g. `database.product_latest.description`.
+not flag each other. The database form names one of this program's tables and columns, e.g.
+`database.product_latest.description`; anything else fails the rule with an explanation.
+
+### Failure reasons
+
+A failed rule's `description` is its `on_exception_description` followed by **why** it failed,
+naming the field and value at fault, e.g.
+
+```
+Mandatory product properties are missing: ProductProperties.InextorPackPrint is missing or empty;
+ProductProperties.InextorOuterPrint is missing or empty
+Pack PrimaryProductKey must end with .1: PrimaryProductKey 'urn:…:DA000001.00.7' fails Regex \.1$
+```
+
+Every Target of a rule is checked, so all failing fields are listed, not only the first. A check
+that only chooses an IF branch is not a reason. The same text goes into the validation results
+and the log files.
+
+### ListEntries: checking a list entry by entry
+
+Comma-joined fields cannot say *which* list entry is wrong, or *how many* entries match. The
+`ListEntries` data type checks the list itself. Use it in a Target condition:
+
+| Column | Meaning | Example |
+|---|---|---|
+| `field_name` | `<list>[].<field>`: the list, and the field the operator tests in each entry (`<list>[]` alone takes every entry) | `AlternateProductKeys[].ProductKey`, `Units[]` |
+| `operator` + `expected_value` | which entries count (any operator; comma-separated values are OR'd). Without an operator, an entry counts when it has the field | `starts_with` + `urn:inexto:id:prd:msku` |
+| `constraint_expr` | `required=A,B`: fields every counted entry must have (not empty; `0` is a value). `min=` / `max=` / `count=`: how many entries must count | `count=2;required=ProductKeyType,ProductKeyMode` |
+
+Its reasons name the entry: `AlternateProductKeys[1] (urn:inexto:id:prd:gtin:0541…) is missing
+ProductKeyMode`, or the count: `AlternateProductKeys has 1 entry with ProductKey starts_with
+urn:inexto:id:prd:gtin:msku; needs exactly 2`.
+
+### Rules A-E (`product_validation_rules/`)
+
+One file per rule, each a complete `POST /product-validation-rules` body. Load them with
+`python product_seed_validation_rules.py product_validation_rules`, or post the files.
+
+| Rule | Requirement | Built with |
+|---|---|---|
+| `PRD-A-MANDATORY-PROPERTIES` | `ProductProperties.ProductTypeCode`, `.InextorPackPrint`, `.InextorOuterPrint` not empty, on every product | 3 Targets · Exist |
+| `PRD-B1-SHIPPING-CASE-KEYS` | Shipping Case: at least one key starting with `urn:inexto:id:prd:msku` / `gtin` / `gtin:msku` / `gtin:bv`; every such key has `ProductKeyType` and `ProductKeyMode` | Trigger (`= Shipping Case`) · ListEntries `min=1` |
+| `PRD-B2-BUNDLE-MSKU` | Bundle: a key starting with `urn:inexto:id:prd:msku`, with type and mode | Trigger (`= Bundle`) · ListEntries `min=1` |
+| `PRD-B3-PACK-MSKU` | Pack: the same | Trigger (`= Pack`) · ListEntries `min=1` |
+| `PRD-C-TPM-GTIN-MSKU-TWICE` | `TpmProduct` = `True`: exactly two keys starting with `urn:inexto:id:prd:gtin:msku`, each with type and mode | Trigger (`TpmProduct = True`) · ListEntries `count=2` |
+| `PRD-D1/D2/D3-…-KEY-SUFFIX` | `PrimaryProductKey` ends with `.1` (Pack), `.2` (Bundle), `.3` (Shipping Case) | Trigger · Regex `\.1$` |
+| `PRD-E-UNITS-MANDATORY` | at least one `Units` entry, each with `UnitTypeName`, `Quantity`, `BaseUnit` | ListEntries `min=1` |
+
+On the sample files, `product2.json` and `product3.json` pass all of them; every level of
+`product.json` fails `PRD-A-MANDATORY-PROPERTIES` (it has no `InextorPackPrint` /
+`InextorOuterPrint`).
+
+Rule C counts matching entries: two different `gtin:msku` keys pass as well as the same entry
+twice (the example in the requirements).
 
 ### Example rule set (`product_seed_validation_rules.py`)
 
@@ -233,7 +297,7 @@ log_<first 12 characters of product_hash>_<YYYYMMDD>.json      e.g. log_e398306b
 - **No location:** no location tables or endpoints, no join, no `JOIN-COMPLETENESS`, and no `location_id` / `source` columns.
 - **Identity** is `PrimaryProductKey` alone, not `systemCode` + `businessEntityCode`.
 - **Nested input:** one row per hierarchy level, three detail tables, and dotted-path rule fields.
-- **Separate database and names:** `product_database.db`, `product_*` tables, and port 8001.
+- **Shared database, own tables:** the same SQL Server database, but only `product_*` tables, and port 8001.
 - **Responsible contacts** are linked to a `product_code`, not to a system or a location's country.
-- **Not copied:** the entity migration code. The product schema has its own small upgrade (adding `product_code`).
+- **Engine additions:** the `ListEntries` data type and failure reasons in the description (see above).
 - **Small engine fixes:** `Unique(batch)` is tracked per rule, and the app uses `lifespan` instead of the deprecated `@app.on_event`.

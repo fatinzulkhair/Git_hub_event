@@ -1,0 +1,29 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-D1-PACK-KEY-SUFFIX",
+      "validation_type": "Product Master Data - Primary product key",
+      "description": "A Pack's PrimaryProductKey ends with .1",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Pack PrimaryProductKey must end with .1"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-D1-PACK-KEY-SUFFIX",
+      "role": "Trigger",
+      "field_name": "ProductType.Name",
+      "operator": "equals",
+      "expected_value": "Pack"
+    },
+    {
+      "rule_id": "PRD-D1-PACK-KEY-SUFFIX",
+      "role": "Target",
+      "field_name": "PrimaryProductKey",
+      "data_type": "Regex",
+      "expected_value": "\\.1$"
+    }
+  ]
+}

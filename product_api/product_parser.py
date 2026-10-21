@@ -160,7 +160,7 @@ def _objects(value, where: str) -> list:
 
 
 def _scalar(value):
-    """A value SQLite can store: nested JSON is kept as its JSON text."""
+    """A value a table column can store: nested JSON is kept as its JSON text."""
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False)
     return value
@@ -204,6 +204,10 @@ def flatten_product_fields(data: dict, prefix: str = "") -> dict:
         {"Customer": {"Code": "PMI"}}           -> {"Customer.Code": "PMI"}
         {"Props": [{"Name": "A", "Value": 1}]}  -> {"Props.A": 1}      (Name/Value list)
         {"Keys": [{"K": "a"}, {"K": "b"}]}      -> {"Keys.K": "a,b"}   (any other list)
+
+    A list of objects is also kept whole under its own path ({"Keys": [...]}),
+    so the ListEntries data type can check it entry by entry. (A list of
+    plain values stays one comma-joined value under its path, as before.)
     """
     flat = {}
     for key, value in data.items():
@@ -211,6 +215,7 @@ def flatten_product_fields(data: dict, prefix: str = "") -> dict:
         if isinstance(value, dict):
             flat.update(flatten_product_fields(value, f"{path}."))
         elif isinstance(value, list):
+            flat[path] = value
             flat.update(_flatten_list(value, path))
         else:
             flat[path] = value

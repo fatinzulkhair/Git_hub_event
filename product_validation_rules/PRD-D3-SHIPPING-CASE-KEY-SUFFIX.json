@@ -1,0 +1,29 @@
+{
+  "rules": [
+    {
+      "rule_id": "PRD-D3-SHIPPING-CASE-KEY-SUFFIX",
+      "validation_type": "Product Master Data - Primary product key",
+      "description": "A Shipping Case's PrimaryProductKey ends with .3",
+      "severity": "Critical",
+      "active": "Y",
+      "on_exception_status": -1,
+      "on_exception_description": "Shipping Case PrimaryProductKey must end with .3"
+    }
+  ],
+  "conditions": [
+    {
+      "rule_id": "PRD-D3-SHIPPING-CASE-KEY-SUFFIX",
+      "role": "Trigger",
+      "field_name": "ProductType.Name",
+      "operator": "equals",
+      "expected_value": "Shipping Case"
+    },
+    {
+      "rule_id": "PRD-D3-SHIPPING-CASE-KEY-SUFFIX",
+      "role": "Target",
+      "field_name": "PrimaryProductKey",
+      "data_type": "Regex",
+      "expected_value": "\\.3$"
+    }
+  ]
+}

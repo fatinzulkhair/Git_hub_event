@@ -2,7 +2,7 @@
 =====================================================
 ROUTER: /responsible-contacts
 =====================================================
-Create and list rows of the responsible_contact table: who is
+Create and list rows of the entities_responsible_contact table: who is
 responsible for a given system or country, and how to reach them
 (email or Teams account).
 """

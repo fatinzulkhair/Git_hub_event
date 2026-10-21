@@ -16,7 +16,7 @@ from datetime import datetime
 
 import regex
 
-from ..database import query_one
+from ..database import query_one, table_definition
 from .values import is_empty
 
 
@@ -126,11 +126,13 @@ def check_length(value, constraint: str = None) -> bool:
 
 def check_unique(value, field_name: str, reference_source: str, ctx: dict) -> bool:
     """Unique check. `reference_source` is either:
-      - "batch": unique among the entities currently being processed
+      - "batch" (or empty): unique among the entities currently being processed
         together (tracked in ctx['batch_seen']).
-      - "database.<table>.<column>": unique against that DB column.
-      - anything else / empty: defaults to the 'entities' table using
-        `field_name` as the column, excluding the current row's hash.
+      - "database.<table>.<column>": unique against that column, excluding
+        the current record's rows (same entity_hash). The table must be one
+        of this program's tables with an entity_hash column, and the column
+        one of its columns, so a rule cannot reach anything else.
+      - anything else: fails closed.
     """
     if is_empty(value):
         return False
@@ -149,11 +151,10 @@ def check_unique(value, field_name: str, reference_source: str, ctx: dict) -> bo
     if ref.startswith("database."):
         _, _, rest = ref.partition("database.")
         table, _, column = rest.partition(".")
-        table = table.strip()
-        column = column.strip() or field_name
+        table, column = _known_column(table.strip(), column.strip() or field_name, ref)
         row = query_one(
             f"SELECT COUNT(*) AS matches FROM {table} "
-            f"WHERE {column} = ? AND entity_hash != ?",
+            f"WHERE {column} = ? AND entity_hash <> ?",
             (value, current_hash or ""),
             conn=ctx.get("conn") if ctx else None,
         )
@@ -161,6 +162,18 @@ def check_unique(value, field_name: str, reference_source: str, ctx: dict) -> bo
 
     # Unknown reference source: fail closed rather than silently pass
     return False
+
+
+def _known_column(table: str, column: str, ref: str) -> tuple:
+    """(table, column) as defined in database.TABLES, or ValueError — so a
+    rule names only this program's tables, never SQL of its own."""
+    definition = table_definition(table)
+    if definition is None or "entity_hash" not in definition.column_names:
+        raise ValueError(f"Unique: '{ref}' does not name a record table of this program")
+    by_lower = {name.lower(): name for name in definition.column_names}
+    if column.lower() not in by_lower:
+        raise ValueError(f"Unique: table {definition.name} has no column '{column}'")
+    return definition.name, by_lower[column.lower()]
 
 
 _CHECKERS = {

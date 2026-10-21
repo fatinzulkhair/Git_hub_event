@@ -15,8 +15,11 @@ import os
 # An absolute path in an environment variable is used as it is.
 PRODUCT_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-PRODUCT_DB_NAME = os.path.join(
-    PRODUCT_PROJECT_ROOT, os.environ.get("PRODUCT_DB_NAME", "product_database.db")
+# SQL Server (AWS RDS) connection details — see product_sql_server.py. The
+# entity program reads the same file by default: both live in one database.
+PRODUCT_DB_CONFIG_PATH = os.path.join(
+    PRODUCT_PROJECT_ROOT,
+    os.environ.get("PRODUCT_DB_CONFIG", os.path.join("server_testing", "config.json")),
 )
 
 # Folder product_load_data.py bulk-loads from when given no arguments.

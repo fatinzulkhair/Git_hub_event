@@ -13,7 +13,9 @@ requirements.
                                    is considered not applicable and passes
                                    automatically.
   - Target rows                -> all must pass (AND) using the Data Type
-                                   column.
+                                   column. Every Target is evaluated, even
+                                   after one fails, so the result names every
+                                   failing field, not just the first.
 
 NOTE: `Logical Group` is currently treated as informational only (everything
 within a role is AND'd together), exactly as in the entity engine.
@@ -44,7 +46,7 @@ def evaluate_rule_conditions(rule_id: str, product: dict, ctx: dict, ruleset) ->
     if not in_scope:
         return True  # rule not applicable to this product
 
-    return all(
+    results = [
         evaluate_datatype(
             product,
             row.get("field_name"),
@@ -52,6 +54,8 @@ def evaluate_rule_conditions(rule_id: str, product: dict, ctx: dict, ruleset) ->
             row.get("expected_value") or row.get("constraint_expr"),
             row.get("reference_source"),
             ctx,
+            condition=row,
         )
         for row in targets
-    )
+    ]
+    return all(results)

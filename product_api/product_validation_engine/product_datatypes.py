@@ -4,20 +4,27 @@ product_validation_engine: /product_datatypes.py
 =====================================================
 Implements the "Daftar Data Type" section of the rule-engine
 documentation: Exist, Text, Number, Boolean, Date, Enum, Regex,
-Romanize, Length, Unique.
+Romanize, Length, Unique — plus ListEntries, which checks the entries of a
+JSON list one by one (see check_list_entries).
 
 Each function takes the raw field value (or the product + field
 name, for the ones that need DB/batch context) and the
 Constraint string documented for that type, e.g.
 "min=1;max=10" or "pattern=alpha_only".
+
+A failed check says why in ctx["failure_details"] (see explain()). The rule
+engine adds those reasons to the description of a rule that fails, so the
+result names the field and the value at fault.
 """
 
 from datetime import datetime
 
 import regex
 
-from ..product_database import query_one
-from .product_values import is_empty
+from ..product_database import query_one, table_definition
+from ..product_parser import flatten_product_fields
+from .product_operators import evaluate_operator
+from .product_values import ProductCaseInsensitiveRecord, is_empty, split_csv
 
 
 def _parse_constraint(constraint: str) -> dict:
@@ -35,6 +42,18 @@ def _parse_constraint(constraint: str) -> dict:
         else:
             result[part] = True
     return result
+
+
+def explain(ctx: dict, reason: str) -> None:
+    """Record why a check failed (see the module docstring)."""
+    if ctx is not None:
+        ctx.setdefault("failure_details", []).append(reason)
+
+
+def _short(value) -> str:
+    """A value as it appears in a failure reason: at most 80 characters."""
+    text = str(value)
+    return text if len(text) <= 80 else text[:77] + "..."
 
 
 # ---------------------------------------------------
@@ -127,11 +146,14 @@ def check_unique(value, field_name: str, reference_source: str, ctx: dict) -> bo
     """Unique check. `reference_source` is either:
       - "batch" (or empty): unique among the products processed together in
         one payload, tracked in ctx['batch_seen'] separately for each rule.
-      - "database.<table>.<column>": unique against that DB column, ignoring
-        the current product's own rows (same product_hash).
+      - "database.<table>.<column>": unique against that column, ignoring
+        the current product's own rows (same product_hash). The table must
+        be one of this program's tables with a product_hash column, and the
+        column one of its columns, so a rule cannot reach anything else.
     Anything else fails closed.
     """
     if is_empty(value):
+        explain(ctx, f"{field_name} is missing or empty")
         return False
 
     ref = (reference_source or "").strip()
@@ -145,6 +167,7 @@ def check_unique(value, field_name: str, reference_source: str, ctx: dict) -> bo
             (ctx.get("current_rule_id"), field_name), set()
         )
         if str(value) in seen:
+            explain(ctx, f"{field_name} '{_short(value)}' appears more than once in this payload")
             return False
         seen.add(str(value))
         return True
@@ -152,18 +175,113 @@ def check_unique(value, field_name: str, reference_source: str, ctx: dict) -> bo
     if ref.startswith("database."):
         _, _, rest = ref.partition("database.")
         table, _, column = rest.partition(".")
-        table = table.strip()
-        column = column.strip() or field_name
+        table, column = _known_column(table.strip(), column.strip() or field_name, ref)
         row = query_one(
             f"SELECT COUNT(*) AS matches FROM {table} "
-            f"WHERE {column} = ? AND product_hash != ?",
+            f"WHERE {column} = ? AND product_hash <> ?",
             (value, current_hash or ""),
             conn=ctx.get("conn"),
         )
+        if row["matches"]:
+            explain(ctx, f"{field_name} '{_short(value)}' is already used in {table}.{column}")
         return row["matches"] == 0
 
     # Unknown reference source: fail closed rather than silently pass
+    explain(ctx, f"Unique: unknown reference source '{ref}'")
     return False
+
+
+def _known_column(table: str, column: str, ref: str) -> tuple:
+    """(table, column) as defined in product_database.PRODUCT_TABLES, or
+    ValueError — so a rule names only this program's tables, never SQL of
+    its own."""
+    definition = table_definition(table)
+    if definition is None or "product_hash" not in definition.column_names:
+        raise ValueError(f"Unique: '{ref}' does not name a product table of this program")
+    by_lower = {name.lower(): name for name in definition.column_names}
+    if column.lower() not in by_lower:
+        raise ValueError(f"Unique: table {definition.name} has no column '{column}'")
+    return definition.name, by_lower[column.lower()]
+
+
+def check_list_entries(product: dict, field_name: str, operator: str,
+                       expected_value: str, constraint: str, ctx: dict) -> bool:
+    """Check a JSON list entry by entry, which the flattened (comma-joined)
+    fields cannot do. Used in a Rule Condition row:
+
+    field_name      "<list>[].<field>": the list, and the field of each entry
+                    the operator tests, e.g. "AlternateProductKeys[].ProductKey".
+                    "<list>[]" (or just "<list>") takes every entry, e.g. "Units[]".
+    operator        which entries count, e.g. starts_with with expected_value
+    expected_value  "urn:inexto:id:prd:msku" (comma-separated values are OR'd,
+                    as for every operator). Without an operator, an entry
+                    counts when it has the field.
+    constraint_expr "required=A,B": fields every counted entry must have,
+                    non-empty (0 is a value); "min=1", "max=2" or "count=2":
+                    how many entries must count.
+
+    Fails, saying why, when the count is out of range or a counted entry
+    lacks a required field.
+    """
+    list_path, _, entry_field = str(field_name).partition("[]")
+    list_path, entry_field = list_path.strip(), entry_field.strip().lstrip(".")
+    if operator and not entry_field:
+        raise ValueError(f"ListEntries: '{field_name}' needs a field after [] for the operator")
+
+    entries = product.get(list_path)
+    if entries is None:
+        entries = []                     # a missing list has no entries
+    if not isinstance(entries, list):
+        raise ValueError(f"ListEntries: {list_path} is not a list of objects")
+
+    opts = _parse_constraint(constraint)
+    required = split_csv(opts.get("required"))
+    low, high = _count_bounds(opts)
+
+    counted, reasons = 0, []
+    for index, item in enumerate(entries):
+        entry = ProductCaseInsensitiveRecord(
+            flatten_product_fields(item) if isinstance(item, dict) else {}
+        )
+        if entry_field:
+            value = entry.get(entry_field)
+            if operator:
+                selected = evaluate_operator(value, operator, expected_value)
+            else:
+                selected = not is_empty(value)
+            if not selected:
+                continue
+        counted += 1
+        missing = [name for name in required if is_empty(entry.get(name))]
+        if missing:
+            label = f" ({_short(entry.get(entry_field))})" if entry_field else ""
+            reasons.append(f"{list_path}[{index}]{label} is missing {', '.join(missing)}")
+
+    if counted < low or (high is not None and counted > high):
+        which = ""
+        if entry_field:
+            which = f" with {entry_field} {operator} {expected_value}" if operator else f" with {entry_field}"
+        noun = "entry" if counted == 1 else "entries"
+        reasons.insert(0, f"{list_path} has {counted} {noun}{which}; needs {_needed(low, high)}")
+
+    for reason in reasons:
+        explain(ctx, reason)
+    return not reasons
+
+
+def _count_bounds(opts: dict) -> tuple:
+    """(lowest, highest or None) from count= / min= / max=."""
+    if "count" in opts:
+        return int(opts["count"]), int(opts["count"])
+    return int(opts.get("min", 0)), (int(opts["max"]) if "max" in opts else None)
+
+
+def _needed(low: int, high) -> str:
+    if high is None:
+        return f"at least {low}"
+    if low == high:
+        return f"exactly {low}"
+    return f"at most {high}" if low == 0 else f"between {low} and {high}"
 
 
 _CHECKERS = {
@@ -176,18 +294,35 @@ _CHECKERS = {
     "regex": check_regex,
     "romanize": check_romanize,
     "length": check_length,
-    # "unique" is handled separately since it needs field_name + ctx
+    # "unique" and "listentries" are handled separately: they need more
+    # than the value (field name and context, or the whole condition row)
 }
 
 
 def evaluate_datatype(product: dict, field_name: str, data_type: str,
                       expected_or_constraint: str, reference_source: str,
-                      ctx: dict) -> bool:
-    """Dispatch a Data Type check for one field of one product."""
+                      ctx: dict, condition: dict = None) -> bool:
+    """Dispatch a Data Type check for one field of one product.
+
+    `condition` is the Rule Condition row when called for one; ListEntries
+    reads its operator / expected_value / constraint_expr columns.
+    """
     if not data_type:
         raise ValueError("Data type is required")
 
     dtype = data_type.strip().lower()
+
+    if dtype == "listentries":
+        if condition is None:
+            raise ValueError(
+                "ListEntries can only be used in a Rule Condition (it reads the "
+                "operator, expected_value and constraint_expr columns)"
+            )
+        return check_list_entries(
+            product, field_name, condition.get("operator"),
+            condition.get("expected_value"), condition.get("constraint_expr"), ctx,
+        )
+
     value = product.get(field_name)
 
     if dtype == "unique":
@@ -197,4 +332,11 @@ def evaluate_datatype(product: dict, field_name: str, data_type: str,
     if checker is None:
         raise ValueError(f"Unknown data type: {data_type}")
 
-    return checker(value, expected_or_constraint)
+    passed = checker(value, expected_or_constraint)
+    if not passed:
+        if is_empty(value):
+            explain(ctx, f"{field_name} is missing or empty")
+        else:
+            argument = f" {expected_or_constraint}" if expected_or_constraint else ""
+            explain(ctx, f"{field_name} '{_short(value)}' fails {data_type}{argument}")
+    return passed
